@@ -121,8 +121,17 @@ export class Session {
     return lines.join('\n');
   }
 
-  public hook(pattern: RegExp, timeoutMs: number, autoResponse?: string): Promise<string> {
+  public hook(pattern: RegExp, timeoutMs: number, autoResponse?: string, triggerPayload?: string): Promise<string> {
     return new Promise((resolve, reject) => {
+      const existingData = this.cleanLines.join('\n');
+      if (pattern.test(existingData)) {
+        if (autoResponse) {
+          this.write(autoResponse, true);
+        }
+        const match = existingData.match(pattern);
+        return resolve(match ? match[0] : "Matched in buffer");
+      }
+
       let hookObj: SessionHook | undefined;
 
       const timeout = setTimeout(() => {
@@ -141,6 +150,10 @@ export class Session {
       };
 
       this.hooks.add(hookObj);
+      
+      if (triggerPayload) {
+        this.write(triggerPayload, true);
+      }
     });
   }
 
@@ -192,6 +205,16 @@ export class SessionManager {
       throw new Error(`Session ${id} not found`);
     }
     return session;
+  }
+
+  public closeSession(id: string) {
+    const session = this.sessions.get(id);
+    if (session) {
+      if (session.status === 'running') {
+        try { session.signal('SIGKILL'); } catch (e) {}
+      }
+      this.sessions.delete(id);
+    }
   }
 
   public listSessions(): SessionInfo[] {

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -86,9 +87,21 @@ const TOOLS: Tool[] = [
         sessionId: { type: "string" },
         pattern: { type: "string" },
         timeoutMs: { type: "number" },
-        autoResponse: { type: "string" }
+        autoResponse: { type: "string" },
+        triggerPayload: { type: "string", description: "Optional payload to write AFTER registering the hook to avoid concurrency deadlocks" }
       },
       required: ["sessionId", "pattern"]
+    }
+  },
+  {
+    name: "session_close",
+    description: "Kills and removes a session, freeing its memory.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" }
+      },
+      required: ["sessionId"]
     }
   },
   {
@@ -153,14 +166,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: data }] };
       }
       case "session_hook": {
-        const { sessionId, pattern, timeoutMs = 30000, autoResponse } = args as any;
+        const { sessionId, pattern, timeoutMs = 30000, autoResponse, triggerPayload } = args as any;
         const session = sessionManager.getSession(sessionId);
+        let regex: RegExp;
         try {
-          const matchedChunk = await session.hook(new RegExp(pattern), timeoutMs, autoResponse);
+          regex = new RegExp(pattern);
+        } catch (e: any) {
+          return { isError: true, content: [{ type: "text", text: `Invalid regex: ${e.message}` }] };
+        }
+        try {
+          const matchedChunk = await session.hook(regex, timeoutMs, autoResponse, triggerPayload);
           return { content: [{ type: "text", text: JSON.stringify({ matched: true, matchedChunk, autoResponded: !!autoResponse }, null, 2) }] };
         } catch (e: any) {
           return { isError: true, content: [{ type: "text", text: e.message }] };
         }
+      }
+      case "session_close": {
+        const { sessionId } = args as any;
+        sessionManager.closeSession(sessionId);
+        return { content: [{ type: "text", text: JSON.stringify({ sessionId, closed: true }, null, 2) }] };
       }
       case "session_signal": {
         const { sessionId, signal } = args as any;
