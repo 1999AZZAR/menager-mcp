@@ -1,0 +1,24 @@
+{
+  "name": "menager",
+  "version": "1.0.0",
+  "description": "A TypeScript-based MCP server for inter-session terminal orchestration, pseudo-terminal (PTY) lifecycle management, ring-buffered I/O multiplexing, and reactive event hooking across polyglot execution harnesses.",
+  "type": "module",
+  "bin": {
+    "menager": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x build/index.js",
+    "watch": "tsc --watch",
+    "start": "node build/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "node-pty": "^1.1.0-beta11",
+    "strip-ansi": "^7.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "typescript": "^5.3.3"
+  }
+}
