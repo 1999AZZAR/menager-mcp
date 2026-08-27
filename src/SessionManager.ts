@@ -256,6 +256,20 @@ export class SessionManager {
     return session.getInfo();
   }
 
+  public prune(status?: 'running' | 'exited'): number {
+    let count = 0;
+    for (const [id, session] of this.sessions.entries()) {
+      if (!status || session.status === status) {
+        if (session.status === 'running') {
+          session.signal('SIGKILL');
+        }
+        this.sessions.delete(id);
+        count++;
+      }
+    }
+    return count;
+  }
+
   public getSession(id: string): Session {
     const session = this.sessions.get(id);
     if (!session) {

@@ -148,6 +148,16 @@ const TOOLS: Tool[] = [
     }
   },
   {
+    name: "session_prune",
+    description: "Force deletes sessions (default: only 'exited' sessions).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["running", "exited"] }
+      }
+    }
+  },
+  {
     name: "session_list",
     description: "Lists all active and completed sessions managed by the server.",
     inputSchema: {
@@ -210,6 +220,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { sessionId } = args as any;
         const session = sessionManager.getSession(sessionId);
         return { content: [{ type: "text", text: JSON.stringify(session.getInfo(), null, 2) }] };
+      }
+      case "session_prune": {
+        const { status = "exited" } = args as any;
+        const count = sessionManager.prune(status);
+        return { content: [{ type: "text", text: JSON.stringify({ prunedCount: count }, null, 2) }] };
       }
       case "session_hook": {
         const { sessionId, pattern, timeoutMs = 30000, autoResponse, triggerPayload } = args as any;

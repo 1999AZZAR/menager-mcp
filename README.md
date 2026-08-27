@@ -115,6 +115,10 @@ Sends a POSIX signal to the target session (with recursive process-tree terminat
 Force kills the session's process tree and deletes memory buffers immediately.
 - **`sessionId`** *(string)*: Target session ID. **Required.**
 
+### `session_prune`
+Force deletes sessions to free memory.
+- **`status`** *(string)*: Only delete sessions with this status (`"running"` or `"exited"`). Defaults to `"exited"`.
+
 ### `session_info`
 Returns a single session's live metadata and metrics.
 - **`sessionId`** *(string)*: Target session ID. **Required.**
