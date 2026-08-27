@@ -3,6 +3,8 @@
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg)](https://www.typescriptlang.org/)
 
+![Menager Terminal Orchestration](assets/menager-illustrations/01-terminal-orchestration.jpg)
+
 `menager` is a TypeScript-based Model Context Protocol (MCP) server designed for inter-session terminal orchestration. It enables an AI agent session (or human operator) to act as a master control plane capable of spawning, monitoring, driving, and hooking into child terminal harnesses (CLI tools, secondary AI agents, interactive shells, or polyglot runtimes) via standard POSIX pseudo-terminals (`pty`).
 
 ## Table of Contents
