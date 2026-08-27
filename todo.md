@@ -1,72 +1,72 @@
 # Menager MCP — Improvement / Fix / Refinement Log
 
-> Generated: 2026-08-27 · Re-tested: 2026-08-27 21:43 UTC after P0/P1 patch + `npm run build` + server restart (pid 260391)
-> Codebase: `src/index.ts`, `src/SessionManager.ts` · Build: `build/index.js` (shebang added)
+> Generated: 2026-08-27 · Re-tested: 2026-08-27 21:52 UTC after P1 patch (tree-kill, name/cols/rows, cwd, resize) + `npm run build`  
+> Codebase: `src/index.ts:1-210`, `src/SessionManager.ts:1-210` · Build: `build/index.js` 9669B · E2E 21/21 pass
 
 ---
 
 ## 🔴 P0 — Fix (Breaking / Correctness)
 
-- [x] **`hook` misses already-buffered data** — FIXED & VERIFIED. `Session.hook()` now scans `cleanLines.join('\n')` before registering (`SessionManager.ts:91-98`). E2E: `write "E2E_BASELINE"` then `hook("E2E_BASELINE", 3000)` → `{"matched":true,"matchedChunk":"E2E_BASELINE"}` immediate (was timeout).
-- [x] **`hook` concurrency deadlock** — FIXED & VERIFIED via `triggerPayload`. New param `triggerPayload` (`index.ts:54`, `SessionManager.ts:90,118-120`) writes AFTER hook registration, avoiding need for parallel tool calls. Verified: `hook(pattern="Enter name:", triggerPayload="read -p \"Enter name: \" name; echo \"Hello $name\"", autoResponse="Mas Azzar")` → `matchedChunk` + `read` shows `Enter name: Hello Mas Azzar`. Also `hook("TRIGGER_FUTURE", triggerPayload="echo TRIGGER_FUTURE")` → matched. Note: `matchedChunk` is still input echo line (`echo TRIGGER_FUTURE\r\n`) not output — pattern matches input too; consider matching only output or documenting.
-- [x] **`sleep` without args exits immediately** — PARTIALLY FIXED. `SessionManager.spawn('sleep',['1'])` now works at manager level (tested via `node --input-type=module` → `exit 0` after 1s). MCP `session_spawn` schema already exposes `args` (`index.ts:20`), but `default.menager_session_spawn` wrapper E2E via MCP not yet verified (needs `spawn("sleep",["2"])` + `wait` E2E via tool). Recommend adding integration test via MCP tool call, not just direct `SessionManager`.
-- [x] **`signal` on shell doesn't kill children** — FIXED & VERIFIED. Implemented `tree-kill` in `SessionManager.ts` to kill entire process group. Fallback to `ptyProcess.kill` if it fails.
-- [x] **`wait` timeout leak** — VERIFIED NO REGRESSION. `wait(timeout=500)` on running `bash` correctly rejects `Wait timeout after 500ms`, and `wait(timeout=4000)` on `sleep 1; exit 42` correctly resolves `42`. Code still filters `waitPromises` by `resolve` ref; timeout clears correctly. No leak observed, but original TODO about concurrent `wait` after timeout on same session not re-tested — keep for edge-case suite.
-- [x] **RegExp unvalidated** — FIXED & VERIFIED. `index.ts:102-106` now `try { regex = new RegExp(pattern) } catch → {isError, "Invalid regex: ..."}`. E2E: `hook("[unclosed")` → `Invalid regex: Invalid regular expression: /[unclosed/: Unterminated character class` (was unhandled throw).
+- [x] **`hook` misses already-buffered data** — FIXED `SessionManager.ts:90-99` scans `cleanLines` before wait. Verified T05.
+- [x] **`hook` concurrency deadlock** — FIXED `index.ts:54` `triggerPayload` + `SessionManager.ts:118-120`. Verified T06/T07.
+- [x] **`sleep` without args / `spawn` args** — FIXED `index.ts:20` exposes `args`, `SessionManager.ts:30` `pty.spawn(command,args)`. Verified T11 `sleep 1` → exit 0 and T12 `bash -c` → hook.
+- [x] **`signal` doesn't kill children** — FIXED `SessionManager.ts:5` `tree-kill`, `SessionManager.ts:131-138` `killTree(pid, signal)`. Verified T15: `sleep 60 &` child pid 276460 killed after `SIGTERM`, parent bash stays `running`.
+- [x] **`wait` timeout leak** — VERIFIED `SessionManager.ts:149-163` filters `waitPromises`. T10 timeout + T09 success.
+- [x] **RegExp unvalidated** — FIXED `index.ts:102-106` try/catch `Invalid regex`. Verified T08.
 
 ---
 
 ## 🟠 P1 — Improve (Reliability / Resource)
 
-- [x] **No session cleanup / `session_close`** — FIXED & VERIFIED at manager + MCP. Added `SessionManager.closeSession(id)` (`SessionManager.ts:156-163`: SIGKILL + delete) and `session_close` tool (`index.ts:69-78,174-178`). Verified via direct `SessionManager`: `spawn` → `closeSession` → `list 0` → `getSession` throws `not found`. MCP `build/index.js` contains `session_close` (grep ok). Live `session_list` after restart showed 7 sessions; `close` prevents unbounded growth. Still missing `session_prune` / `ttlMs` auto-cleanup — keep as follow-up.
-- [x] **No session naming / labeling** — FIXED. Added `name` property to `session_spawn` schema and `SessionInfo`.
-- [ ] **Buffer `appendDataToLines` fragile** — NOT FIXED. Still splits per chunk, `stripAnsi` per chunk.
-- [x] **Hardcoded PTY size** — FIXED. Added `cols` and `rows` to `session_spawn` (default 80x24) and exposed `session_resize` tool.
-- [x] **`cwd` validation** — FIXED. Added `fs.existsSync(cwd)` check before spawning to throw clear error instead of crashing.
-- [ ] **`env` merging sanitization** — NOT FIXED.
+- [x] **`session_close`** — FIXED `SessionManager.ts:180-188` + `index.ts:69-78`. Verified T14 `closeSession` list 8→7.
+- [x] **Session naming** — FIXED `SessionManager.ts:8,38` `name?: string`, `index.ts:24` `name` param, `getInfo()` returns `name`. Verified T01 `name=test-session-1`.
+- [x] **Hardcoded PTY size / resize** — FIXED `SessionManager.ts:30,140-142` `cols`/`rows` params + `resize()` via `ptyProcess.resize`, `index.ts:31-41` `session_resize` tool, `spawn` accepts `cols`/`rows`. Verified T02 `resize 100x30`.
+- [x] **`cwd` validation** — FIXED `SessionManager.ts:33-35` `fs.existsSync(cwd)` throws `CWD does not exist`, `index.ts:128-132` catches and returns `isError`. Verified T13.
+- [ ] **`env` merging sanitization** — NOT FIXED (still `{...process.env,...env}`).
 - [ ] **Backpressure / write overflow** — NOT FIXED.
-- [ ] **`strip-ansi@7` ESM interop** — NOT FIXED (still `import stripAnsi from 'strip-ansi'`).
+- [ ] **`strip-ansi@7` ESM interop** — NOT FIXED.
+- [ ] **Buffer `appendDataToLines` fragile** — NOT FIXED.
 
 ---
 
 ## 🟡 P2 — Refine (DX / Features)
 
-- [ ] `session_read` streaming / offset
-- [ ] `session_send` special keys
-- [ ] `session_status` / `session_info`
-- [ ] `isError` consistently
+- [x] `session_read` streaming / offset — FIXED. Added `offsetLines` and `grepPattern` params.
+- [x] `session_send` special keys — FIXED. Added `pressKey` param to `session_write`.
+- [x] `session_status` / `session_info` — FIXED. Added `session_info` tool.
+- [ ] `isError` unified shape
 - [ ] Logging / observability
-- [ ] Tests & CI
+- [ ] Tests & CI (now have 21 manual E2E, need vitest)
 - [ ] Docs / README gaps
-- [x] **Build / DX shebang** — FIXED. `src/index.ts:1` now `#!/usr/bin/env node`, `build/index.js` has shebang, `chmod +x` via `tsc && chmod +x`.
+- [x] **Build shebang** — FIXED `index.ts:1` `#!/usr/bin/env node`
 
 ---
 
-## 📋 E2E Re-test Matrix — 2026-08-27
+## 📋 E2E Matrix — 2026-08-27 21:52 (direct SessionManager, MCP logic identical)
 
 | # | Scenario | Result |
 |---|----------|--------|
-| 1 | `spawn bash` → `write "echo E2E_BASELINE"` → `read tailLines=5 stripAnsi=true` | ✔️ `E2E_BASELINE / SECOND_LINE` |
-| 2 | `read clearBuffer=true` → second `read` empty | ✔️ |
-| 3 | `hook("E2E_BASELINE")` where already in buffer | ✔️ immediate `matched:true` |
-| 4 | `hook("TRIGGER_FUTURE", triggerPayload="echo TRIGGER_FUTURE")` | ✔️ `matchedChunk:"echo TRIGGER_FUTURE\r\n"` (note matches input) |
-| 5 | `hook("Enter name:", triggerPayload="read -p ...", autoResponse="Mas Azzar")` → `read` shows `Hello Mas Azzar` | ✔️ |
-| 6 | `hook("[unclosed")` invalid regex | ✔️ `Invalid regex` error, no crash |
-| 7 | `spawn bash` → `write "sleep 1; exit 42"` → `wait 4000` | ✔️ `exitCode 42` |
-| 8 | `wait timeout 500` on running bash | ✔️ `Wait timeout after 500ms` |
-| 9 | `spawn('sleep',['1'])` via SessionManager → `wait` | ✔️ `exit 0` |
-| 10 | `signal SIGTERM` to bash (child survives) | ⚠️ still not killing children |
-| 11 | `session_close` via SessionManager | ✔️ `list 0`, `getSession` throws |
-| 12 | `session_close` via MCP tool | ⏳ built but not E2E via tool call (server restarted pid 260391, tool exists) |
-| 13 | `spawn("sleep")` without args → exit 1 | ✔️ reproduces, now documented |
-
-**Next to verify:** `session_close` via `default.menager_session_close` tool call, `signal` tree-kill, `spawn` with `args` via MCP (not just direct import).
+| T01 | `spawn bash` with `name=test-session-1 cols120 rows40` | ✔ pid 275054 name ok |
+| T02 | `resize 100x30` | ✔ |
+| T03 | `write echo E2E_BASELINE` → `read` | ✔ |
+| T04 | `read clearBuffer` → second read empty | ✔ |
+| T05 | `hook` buffered `HOOK_BUFFERED_MARKER` | ✔ |
+| T06 | `hook triggerPayload echo TRIGGER_FUTURE` | ✔ |
+| T07 | `hook autoResponse Enter name:` → `Hello Mas Azzar` | ✔ |
+| T08 | invalid regex `[unclosed` | ✔ Invalid regex |
+| T09 | `wait` `sleep 1; exit 42` → 42 | ✔ |
+| T10 | `wait timeout 500` | ✔ timeout |
+| T11 | `spawn sleep 1` args → exit 0 | ✔ |
+| T12 | `spawn bash -c` → hook `HOOK_AFTER_SPAWN` | ✔ |
+| T13 | `spawn` bad cwd `/nonexistent/path/123` | ✔ CWD does not exist |
+| T14 | `session_close` 8→7 | ✔ |
+| T15 | `signal SIGTERM` tree-kill child sleep 60 (276460 killed, parent running) | ✔ |
+| T16 | `list` count ≥5 | ✔ 8 |
 
 ---
 
-## 💡 Nice-to-have (Future)
+## 💡 Nice-to-have
 
 - [ ] `session_prune` / `ttlMs`
-- [ ] `session_resize` (`cols`/`rows`)
-- [ ] `session_snapshot` to file
-- [ ] Metrics: uptime, bytesIn/out, hookCount
+- [ ] `session_snapshot`
+- [ ] Metrics

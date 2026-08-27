@@ -114,21 +114,48 @@ export class Session {
     this.hooks.clear();
   }
 
-  public write(payload: string, pressEnter: boolean = true) {
-    const data = pressEnter ? payload + '\n' : payload;
-    this.ptyProcess.write(data);
-    return data.length;
+  public write(payload: string, pressEnter: boolean = false, pressKey?: string) {
+    let finalPayload = payload;
+    if (pressKey) {
+      const keys: Record<string, string> = {
+        'Ctrl+C': '\x03',
+        'Ctrl+D': '\x04',
+        'Enter': '\r',
+        'Tab': '\t',
+        'Escape': '\x1b',
+        'ArrowUp': '\x1b[A',
+        'ArrowDown': '\x1b[B'
+      };
+      if (keys[pressKey]) {
+        finalPayload += keys[pressKey];
+      }
+    }
+    if (pressEnter) finalPayload += '\r';
+    this.ptyProcess.write(finalPayload);
+    return finalPayload.length;
   }
 
-  public read(tailLines: number = 100, clean: boolean = true, clearBuffer: boolean = false): string {
-    const targetBuffer = clean ? this.cleanLines : this.rawLines;
-    const lines = targetBuffer.slice(-tailLines);
+  public getLines(tailLines: number = 100, stripAnsi: boolean = true, clearBuffer: boolean = false, offsetLines?: number, grepPattern?: string): string {
+    let lines = stripAnsi ? this.cleanLines : this.rawLines;
+    if (grepPattern) {
+      try {
+        const regex = new RegExp(grepPattern);
+        lines = lines.filter(l => regex.test(l));
+      } catch (e) {
+        // ignore invalid grep
+      }
+    }
+    
+    if (offsetLines !== undefined) {
+      lines = lines.slice(offsetLines, offsetLines + tailLines);
+    } else {
+      lines = lines.slice(-tailLines);
+    }
     
     if (clearBuffer) {
       this.rawLines = [''];
       this.cleanLines = [''];
     }
-
     return lines.join('\n');
   }
 

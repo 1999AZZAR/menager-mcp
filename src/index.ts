@@ -75,7 +75,8 @@ const TOOLS: Tool[] = [
       properties: {
         sessionId: { type: "string" },
         payload: { type: "string" },
-        pressEnter: { type: "boolean" }
+        pressEnter: { type: "boolean" },
+        pressKey: { type: "string", description: "Optional special key (Ctrl+C, Ctrl+D, Enter, Tab, Escape, ArrowUp, ArrowDown)" }
       },
       required: ["sessionId", "payload"]
     }
@@ -89,7 +90,9 @@ const TOOLS: Tool[] = [
         sessionId: { type: "string" },
         tailLines: { type: "number" },
         stripAnsi: { type: "boolean" },
-        clearBuffer: { type: "boolean" }
+        clearBuffer: { type: "boolean" },
+        offsetLines: { type: "number", description: "Read lines starting from this index" },
+        grepPattern: { type: "string", description: "Filter read lines by regex pattern" }
       },
       required: ["sessionId"]
     }
@@ -130,6 +133,17 @@ const TOOLS: Tool[] = [
         signal: { type: "string", enum: ["SIGINT", "SIGTERM", "SIGKILL"] }
       },
       required: ["sessionId", "signal"]
+    }
+  },
+  {
+    name: "session_info",
+    description: "Returns metadata and status for a specific session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" }
+      },
+      required: ["sessionId"]
     }
   },
   {
@@ -180,16 +194,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
       case "session_write": {
-        const { sessionId, payload, pressEnter = true } = args as any;
+        const { sessionId, payload, pressEnter = false, pressKey } = args as any;
         const session = sessionManager.getSession(sessionId);
-        const bytesWritten = session.write(payload, pressEnter);
-        return { content: [{ type: "text", text: JSON.stringify({ sessionId, bytesWritten }, null, 2) }] };
+        const bytes = session.write(payload, pressEnter, pressKey);
+        return { content: [{ type: "text", text: JSON.stringify({ sessionId, bytesWritten: bytes }, null, 2) }] };
       }
       case "session_read": {
-        const { sessionId, tailLines = 100, stripAnsi = true, clearBuffer = false } = args as any;
+        const { sessionId, tailLines = 100, stripAnsi = true, clearBuffer = false, offsetLines, grepPattern } = args as any;
         const session = sessionManager.getSession(sessionId);
-        const data = session.read(tailLines, stripAnsi, clearBuffer);
+        const data = session.getLines(tailLines, stripAnsi, clearBuffer, offsetLines, grepPattern);
         return { content: [{ type: "text", text: data }] };
+      }
+      case "session_info": {
+        const { sessionId } = args as any;
+        const session = sessionManager.getSession(sessionId);
+        return { content: [{ type: "text", text: JSON.stringify(session.getInfo(), null, 2) }] };
       }
       case "session_hook": {
         const { sessionId, pattern, timeoutMs = 30000, autoResponse, triggerPayload } = args as any;
