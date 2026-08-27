@@ -176,6 +176,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  console.error(`[MCP] Tool: ${name} | Session: ${args?.sessionId || 'N/A'}`);
 
   try {
     switch (name) {
@@ -207,7 +208,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "session_write": {
         const { sessionId, payload, pressEnter = false, pressKey } = args as any;
         const session = sessionManager.getSession(sessionId);
-        const bytes = session.write(payload, pressEnter, pressKey);
+        const bytes = await session.write(payload, pressEnter, pressKey);
         return { content: [{ type: "text", text: JSON.stringify({ sessionId, bytesWritten: bytes }, null, 2) }] };
       }
       case "session_read": {

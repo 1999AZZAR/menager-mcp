@@ -107,7 +107,7 @@ export class Session {
         clearTimeout(hook.timeout);
         this.hooks.delete(hook);
         if (hook.autoResponse) {
-          this.write(hook.autoResponse, true);
+          this.write(hook.autoResponse, true).catch(() => {});
         }
         hook.resolve(latestCleanText);
       }
@@ -122,7 +122,7 @@ export class Session {
     this.hooks.clear();
   }
 
-  public write(payload: string, pressEnter: boolean = false, pressKey?: string) {
+  public async write(payload: string, pressEnter: boolean = false, pressKey?: string): Promise<number> {
     let finalPayload = payload;
     if (pressKey) {
       const keys: Record<string, string> = {
@@ -139,7 +139,14 @@ export class Session {
       }
     }
     if (pressEnter) finalPayload += '\r';
-    this.ptyProcess.write(finalPayload);
+    
+    const chunkSize = 16384;
+    for (let i = 0; i < finalPayload.length; i += chunkSize) {
+      this.ptyProcess.write(finalPayload.slice(i, i + chunkSize));
+      if (i + chunkSize < finalPayload.length) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+    }
     return finalPayload.length;
   }
 

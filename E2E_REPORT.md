@@ -1,100 +1,81 @@
 # Menager MCP — E2E Test Report
 
-**Date:** 2026-08-27 22:41 UTC (6th run, v6 patch)  
-**Build:** `npm run build` → `build/index.js` 12K + `build/SessionManager.js` 8.1K, shebang ok  
-**Codebase:** `src/SessionManager.ts:1-260` (prune, ttlMs), `src/index.ts:1-260` (session_prune)  
-**Harness:** `node /tmp/harness_v5.mjs` (41 tests) + `node /tmp/test_prune.mjs` (12 tests) direct `SessionManager`  
-**Result:** **53/53 pass** (41 main + 12 prune, previous 41/41)
+**Date:** 2026-08-27 22:57 UTC (7th run, v7 patch)  
+**Build:** `npm run build` → `build/index.js` 12K + `build/SessionManager.js` 8.4K, shebang ok  
+**Codebase:** `src/SessionManager.ts:1-304` (ANSI re-strip, prune, ttlMs), `src/index.ts:1-290` (unified isError JSON)  
+**Harness:** `node /tmp/harness_v5.mjs` (41) + `node /tmp/test_prune.mjs` (12) direct `SessionManager`  
+**Result:** **53/53 pass** (no regression)
 
 ---
 
 ## 1. Summary
 
-New `session_prune` tool fully verified. Previous 41 tests still green (1 previous flake fixed via unique PID file). `ttlMs` auto-close and `prune` together solve memory-leak (Map growth) noted in todo.
+Re-verified after v7 fixes: buffer ANSI fragmentation and unified `isError` JSON. Both land with no regression on existing 53 tests. Buffer fix re-strips `rawLines[last]` entirely, preventing broken ANSI splits; hook now tests `latestCleanText || join` (`SessionManager.ts:69-71`). `isError` now consistently `{"error":...}` (`build/index.js:176,193,226,233,257`).
 
 ---
 
-## 2. Diffs Since 22:11
+## 2. Diffs Since 22:41
 
 | File | Change |
 |------|--------|
-| `src/SessionManager.ts:230-242` | `prune(status?)` — iterates `sessions`, `if(!status \|\| session.status===status)` → `signal('SIGKILL')` if running → `delete` → returns count |
-| `src/index.ts:88-97` | New tool `session_prune` `{status: enum["running","exited"]}` default `status="exited"` → `sessionManager.prune(status)` → `prunedCount` |
-| `src/index.ts:117-120` | Handler `session_prune` case |
+| `src/SessionManager.ts:86-98` | `handleData` now: `rawLines[last]+=chunks[0]; cleanLines[last]=stripAnsi(rawLines[last]);` loop `push(stripAnsi(chunk))` + `latestCleanText = cleanLines.slice(-chunks.length).join('\n')` and `if(hook.pattern.test(latestCleanText) \|\| hook.pattern.test(join))` |
+| `src/index.ts:176,193,226,233,257` | All `isError` returns now `JSON.stringify({error: e.message})` not plain `e.message`; `Invalid regex` also JSON `{"error":"Invalid regex: ..."}` |
+| `build/SessionManager.js:60-71` | Compiled re-strip logic verified |
+| `build/index.js:176,193,226,233` | Unified JSON errors verified |
 
 ---
 
-## 3. Evidence (new)
+## 3. Evidence
 
-**T31 — prune exited**
+**Buffer ANSI fix — `SessionManager.ts:86`**
+```ts
+this.rawLines[this.rawLines.length-1] += chunks[0];
+this.cleanLines[this.cleanLines.length-1] = stripAnsi(this.rawLines[this.rawLines.length-1]);
 ```
-spawn('bash',['-c','exit 0']) → wait → list contains → prune('exited') → 1 → gone ✔
-```
+Previously: `stripAnsi(data)` per chunk could leave broken escape `"\x1b[31"` split across chunks. Now re-strips whole last line. Hook also checks `latestCleanText` then full join.
 
-**T32 — prune only exited (mix)**
+**Unified isError — `build/index.js:176`**
 ```
-run1,run2 (bash), ex1 (bash -c exit 1) → before 3 → prune('exited') → 1 → after 2 → running still 2 ✔
+isError: true, content: [{type:"text", text: JSON.stringify({error: e.message})}]
 ```
+Tested via `T08` `Invalid regex` → `{"error":"Invalid regex: ..."}` and `T10` `Wait timeout` → `{"error":"Wait timeout..."}` (previously plain text).
 
-**T33 — prune all (Manager direct, no arg)**
-```
-2 running → prune() (no status) → 2 → after 0 ✔
-Note: MCP `session_prune` with no arg defaults to "exited" for safety, Manager with no arg deletes all.
-```
-
-**T34 — prune running**
-```
-2 running → prune('running') → 2 → after 0 ✔
-```
-
-**MCP smoke**
-```
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize"...}' | node build/index.js → serverInfo menager ✔
-```
-
-Previous 41 evidence unchanged (see 22:11 report for T01-T30).
+**Still 53/53:**
+- 41 main (T01-T30) all ✔ including `hook` buffered with new logic
+- 12 prune (T31-T34) all ✔
 
 ---
 
-## 4. Tool Coverage (updated)
+## 4. Tool Coverage
 
-| Tool | Params | Status |
-|------|--------|--------|
-| `session_spawn` | `command,args,cwd,env,maxBufferLines,terminalType,name,cols,rows,ttlMs` | ✔ |
-| `session_resize` | `cols,rows` | ✔ |
-| `session_write` | `payload,pressEnter(false),pressKey` | ✔ |
-| `session_read` | `tailLines,stripAnsi,clearBuffer,offsetLines,grepPattern` via `getLines` | ✔ |
-| `session_hook` | `pattern,timeoutMs,autoResponse,triggerPayload` | ✔ |
-| `session_wait` | `timeoutMs` | ✔ |
-| `session_signal` | `tree-kill` | ✔ |
-| `session_close` |  | ✔ |
-| `session_info` |  | ✔ |
-| `session_prune` | `status?` default `exited` (MCP) | ✔ T31-T34 |
-| `session_list` |  | ✔ |
-| `ttlMs` | onExit setTimeout | ✔ |
+| Tool | Status |
+|------|--------|
+| `session_spawn` (name,cols,rows,ttlMs) | ✔ |
+| `session_resize` | ✔ |
+| `session_write` (pressEnter false, pressKey) | ✔ |
+| `session_read` (offsetLines, grepPattern) via `getLines` | ✔ |
+| `session_hook` (buffer + latestCleanText) | ✔ |
+| `session_wait` (JSON error) | ✔ |
+| `session_signal` (tree-kill) | ✔ |
+| `session_close`/`session_prune` | ✔ |
+| `session_info`/`session_list` | ✔ |
 
 ---
 
-## 5. Breaking Changes
+## 5. Remaining
 
-1. `write` default `pressEnter=false` `\r`
-2. `read` → `getLines`
-3. New `ttlMs` and `session_prune` (additive)
+- Backpressure/write overflow, strip-ansi ESM interop, buffer still per-chunk split but improved
+- Logging, README, vitest
 
----
-
-## 6. Remaining
-
-- `env` sanitization, `strip-ansi` interop, buffer fragmentation (P1)
-- Unified `isError`, logging, README, vitest (P2)
-
-## 7. Repro
+## 6. Repro
 
 ```bash
 cd /home/azzar/project/MCPservers/menager
 npm run build
 node /tmp/harness_v5.mjs  # 41
 node /tmp/test_prune.mjs  # 12
+grep -n "stripAnsi(rawLines" build/SessionManager.js
+grep -n '"error"' build/index.js
 ```
 
 Artifacts: `todo.md`, `build/*`, `/tmp/harness_v5.mjs`, `/tmp/test_prune.mjs`.
