@@ -66,7 +66,10 @@ Spawns a new child PTY session.
 - **`cwd`** *(string)*: Working directory path.
 - **`env`** *(object)*: Additional environment variables.
 - **`maxBufferLines`** *(number)*: Rolling line limit for memory buffers (default 5000).
-- **`terminalType`** *(string)*: Terminal emulation type. Use `"dumb"` for clean, non-interactive logs without TUI cursor artifacts, or `"xterm-256color"` for standard colors (default `"xterm-256color"`).
+- **`terminalType`** *(string)*: Terminal emulation type (`"dumb"` or `"xterm-256color"`, default `"xterm-256color"`).
+- **`name`** *(string)*: Optional logical name/label for the session.
+- **`cols`** *(number)*: Terminal columns (default 80).
+- **`rows`** *(number)*: Terminal rows (default 24).
 
 ### `session_wait`
 Blocks and waits for a session to exit gracefully, returning its final exit code.
@@ -77,7 +80,8 @@ Blocks and waits for a session to exit gracefully, returning its final exit code
 Injects keystrokes, commands, or escape sequences into the session's standard input.
 - **`sessionId`** *(string)*: Target session ID. **Required.**
 - **`payload`** *(string)*: String or control character sequence. **Required.**
-- **`pressEnter`** *(boolean)*: Append `\n` to the payload (default true).
+- **`pressEnter`** *(boolean)*: Append `\n` to the payload (default **false** - *Breaking Change in v4*).
+- **`pressKey`** *(string)*: Special key injection (`Ctrl+C`, `Ctrl+D`, `Enter`, `Tab`, `Escape`, `ArrowUp`, `ArrowDown`).
 
 ### `session_read`
 Reads buffered output from the target session.
@@ -85,6 +89,8 @@ Reads buffered output from the target session.
 - **`tailLines`** *(number)*: Number of trailing lines to retrieve (default 100).
 - **`stripAnsi`** *(boolean)*: Return sanitized text without ANSI codes (default true).
 - **`clearBuffer`** *(boolean)*: Flush internal buffers after read (default false).
+- **`offsetLines`** *(number)*: Read lines starting from this absolute index offset (replaces tailLines).
+- **`grepPattern`** *(string)*: Pre-filter buffer lines via Regex string matching.
 
 ### `session_hook`
 Awaits a specific regex pattern on the session stream with optional automated reply.
@@ -92,11 +98,26 @@ Awaits a specific regex pattern on the session stream with optional automated re
 - **`pattern`** *(string)*: Regular expression string to observe. **Required.**
 - **`timeoutMs`** *(number)*: Milliseconds before timing out (default 30000).
 - **`autoResponse`** *(string)*: Optional string to immediately write on match.
+- **`triggerPayload`** *(string)*: Write payload *after* hook registers (prevents concurrency deadlock).
+
+### `session_resize`
+Resizes the target PTY terminal dimensions.
+- **`sessionId`** *(string)*: Target session ID. **Required.**
+- **`cols`** *(number)*: Terminal columns. **Required.**
+- **`rows`** *(number)*: Terminal rows. **Required.**
 
 ### `session_signal`
-Sends a POSIX signal to the target session process.
+Sends a POSIX signal to the target session (with recursive process-tree termination).
 - **`sessionId`** *(string)*: Target session ID. **Required.**
 - **`signal`** *(string)*: Signal to deliver (`SIGINT`, `SIGTERM`, `SIGKILL`). **Required.**
+
+### `session_close`
+Force kills the session's process tree and deletes memory buffers immediately.
+- **`sessionId`** *(string)*: Target session ID. **Required.**
+
+### `session_info`
+Returns a single session's live metadata and metrics.
+- **`sessionId`** *(string)*: Target session ID. **Required.**
 
 ### `session_list`
 Lists all active and completed sessions managed by the server. No parameters required.

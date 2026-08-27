@@ -15,6 +15,7 @@ export interface SessionInfo {
   status: 'running' | 'exited';
   exitCode: number | null;
   createdAt: string;
+  ttlMs?: number;
 }
 
 interface SessionHook {
@@ -47,7 +48,9 @@ export class Session {
     terminalType: string = 'xterm-256color',
     public name?: string,
     cols: number = 80,
-    rows: number = 24
+    rows: number = 24,
+    public ttlMs?: number,
+    onCleanup?: () => void
   ) {
     if (!fs.existsSync(cwd)) {
       throw new Error(`CWD does not exist: ${cwd}`);
@@ -74,6 +77,9 @@ export class Session {
         p.resolve(event.exitCode);
       });
       this.waitPromises = [];
+      if (this.ttlMs && onCleanup) {
+        setTimeout(onCleanup, this.ttlMs);
+      }
     });
   }
 
@@ -242,8 +248,10 @@ export class Session {
 export class SessionManager {
   private sessions: Map<string, Session> = new Map();
 
-  public spawn(command: string, args: string[] = [], cwd: string = process.cwd(), env: Record<string, string> = {}, maxBufferLines: number = 5000, terminalType: string = 'xterm-256color', name?: string, cols?: number, rows?: number): SessionInfo {
-    const session = new Session(command, args, cwd, env, maxBufferLines, terminalType, name, cols, rows);
+  public spawn(command: string, args: string[] = [], cwd: string = process.cwd(), env: Record<string, string> = {}, maxBufferLines: number = 5000, terminalType: string = 'xterm-256color', name?: string, cols?: number, rows?: number, ttlMs?: number): SessionInfo {
+    const session = new Session(command, args, cwd, env, maxBufferLines, terminalType, name, cols, rows, ttlMs, () => {
+      this.sessions.delete(session.id);
+    });
     this.sessions.set(session.id, session);
     return session.getInfo();
   }

@@ -1,175 +1,114 @@
 # Menager MCP — E2E Test Report
 
-**Date:** 2026-08-27 21:52 UTC (3rd run, after P1 patch)  
-**Build:** `npm run build` → `build/index.js` 9669B + `build/SessionManager.js` 6702B, shebang ok  
-**Codebase:** `src/SessionManager.ts:1-210`, `src/index.ts:1-210`  
-**Test harness:** Direct `SessionManager` via `node --input-type=module` (MCP thin wrapper, logic identical). MCP stdio server was restarted (pid 260391 killed → direct tests bypass MCP).  
-**Result:** **21/21 pass** (was 10/13 on 21:43 run)
+**Date:** 2026-08-27 22:03 UTC (4th run, v4 patch)  
+**Build:** `npm run build` → `build/index.js` 11K + `build/SessionManager.js` 7.5K, shebang ok  
+**Codebase:** `src/SessionManager.ts:1-230`, `src/index.ts:1-230`  
+**Harness:** `node /tmp/harness.mjs` direct `SessionManager` (MCP wrapper is thin; `session_read` now calls `getLines`, `session_write` adds `pressKey`, `session_info` new).  
+**Result:** **32/33 pass** (1 flake, stale PID file, not code)
 
 ---
 
 ## 1. Summary
 
-All P0 and most P1 fixes now verified. The previous blockers `signal` tree-kill and `spawn args` via MCP are now **fixed and E2E'd**. New features `name`, `cols`/`rows` + `session_resize`, `cwd` validation all pass. Only non-critical P1/P2 remain (env sanitization, backpressure, strip-ansi interop, docs/CI).
+All new v4 features land and E2E: `pressKey` (`Ctrl+C`/`Enter`), `getLines` `offsetLines`/`grepPattern`, `session_info`, plus existing P0/P1 remain green. One flake `T15_child_before` due to harness reusing `/tmp/menager_test_pid4` from prior run (285283 already killed). Core `signal` tree-kill still verified (child gone, parent `running`). Breaking changes introduced: `write` default `pressEnter:false` and `read`→`getLines` rename — must document.
 
 ---
 
-## 2. Diffs Since Last Report (21:43 → 21:52)
+## 2. Diffs Since 21:52
 
 | File | Change |
 |------|--------|
-| `src/SessionManager.ts:5` | `import killTree from 'tree-kill'` |
-| `src/SessionManager.ts:8` | `SessionInfo.name?: string` |
-| `src/SessionManager.ts:33-35` | `fs.existsSync(cwd)` validation |
-| `src/SessionManager.ts:30,38` | `name`, `cols`, `rows` params forwarded to `pty.spawn` |
-| `src/SessionManager.ts:131-142` | `signal()` → `killTree(pid, signal)` fallback → `ptyProcess.kill`; new `resize(cols,rows)` |
-| `src/SessionManager.ts:168` | `spawn(..., name?, cols?, rows?)` |
-| `src/index.ts:24,26-27` | `spawn` schema adds `name`, `cols`, `rows` |
-| `src/index.ts:31-41` | New tool `session_resize` |
-| `src/index.ts:128-132` | `spawn` try/catch for cwd error |
+| `src/SessionManager.ts:86-103` | `write(payload, pressEnter=false, pressKey?)` maps `Ctrl+C→\x03` etc., `pressEnter` adds `\r` (was `\n`), `pressKey` appended. |
+| `src/SessionManager.ts:108-130` | `read` → `getLines(tailLines, stripAnsi, clearBuffer, offsetLines?, grepPattern?)` with `grep` filter and `offsetLines` slice. |
+| `src/index.ts:54-56` | `session_write` schema adds `pressKey`, `pressEnter` default `false` (was `true`). |
+| `src/index.ts:73-84` | `session_read` schema adds `offsetLines`, `grepPattern`, handler calls `getLines`. |
+| `src/index.ts:85-92` | New tool `session_info` returns `getInfo()` (includes `name`, `args`). |
 
 ---
 
-## 3. Detailed Evidence
+## 3. Evidence (selected)
 
-### T01 — spawn with name/cols/rows
+**T03a/b — `pressEnter` default flip**
 ```
-spawn('bash',[],cwd,{},100,'dumb','test-session-1',120,40)
-→ {sessionId:?, pid:275054, name:"test-session-1", status:running}
-✔ name forwarded, pid>0
+write('echo SHOULD_NOT_RUN_UNIQUE', false) → getLines → NOT contains '\nSHOULD_NOT_RUN_UNIQUE\n' ✔
+write('', false, 'Enter') → contains '\nSHOULD_NOT_RUN_UNIQUE\n' ✔
 ```
-`src/SessionManager.ts:38` `src/index.ts:24`
+Proves `pressEnter=false` no longer auto-executes; `Enter` key sends `\r`.
 
-### T02 — resize
+**T18/T19 — `offsetLines` / `grepPattern`**
 ```
-session.resize(100,30) → ptyProcess.resize
-✔ no error
-```
-`src/SessionManager.ts:140-142` `src/index.ts:31-41`
-
-### T03/T04 — write/read/clearBuffer
-```
-write('echo "E2E_BASELINE" && echo "SECOND_LINE"') → read tailLines10 → contains both
-clearBuffer=true → before 42 chars, after "" ✔
+getLines(2, true,false,2) → "echo line3|echo line4"
+getLines(100, true,false,undefined,'line3') → contains line3 not line1 ✔
 ```
 
-### T05 — hook buffered
+**T21 — `pressKey Ctrl+C`**
 ```
-write('echo "HOOK_BUFFERED_MARKER"') → hook(/HOOK_BUFFERED_MARKER/,2000) → "HOOK_BUFFERED_MARKER" ✔
-```
-Logic `SessionManager.ts:90-99` scans `cleanLines` before registering.
-
-### T06 — hook triggerPayload
-```
-hook(/TRIGGER_FUTURE/,3000, undefined, 'echo TRIGGER_FUTURE') → "echo TRIGGER_FUTURE\r\n" → read shows TRIGGER_FUTURE ✔
-```
-`SessionManager.ts:118-120` writes after hook add.
-
-### T07 — hook autoResponse
-```
-hook(/Enter name:/,3000,'Mas Azzar','read -p "Enter name: " name; echo "Hello $name"')
-→ matched "Enter name:" → read shows "Enter name: Hello Mas Azzar" ✔
-```
-`SessionManager.ts:53,95` auto-writes.
-
-### T08 — invalid regex
-```
-hook("[unclosed") → new RegExp throws → caught → "Invalid regex: ..." ✔
-```
-`src/index.ts:102-106`
-
-### T09/T10 — wait
-```
-write('sleep 1; exit 42') → wait 4000 → 42 ✔
-write('sleep 2; echo DONE') → wait 500 → "Wait timeout after 500ms" ✔
-```
-`SessionManager.ts:149-163`
-
-### T11 — spawn args sleep
-```
-spawn('sleep',['1']) → wait 3000 → exit 0 args=["1"] ✔
-```
-`src/SessionManager.ts:30` `pty.spawn(command,args)`
-
-### T12 — spawn bash -c
-```
-spawn('bash',['-c','sleep 0.5; echo HOOK_AFTER_SPAWN']) → hook(/HOOK_AFTER_SPAWN/) → matched ✔
+write('sleep 30',true) → write('',false,'Ctrl+C') → getLines → "sleep 30|^C" ✔
 ```
 
-### T13 — cwd validation
+**T23 — `pressKey Enter`**
 ```
-spawn('bash',[],'/nonexistent/path/123') → throw "CWD does not exist: /nonexistent/path/123" ✔
+write('echo ENTER_TEST_UNIQUE',false) → no output → write('',false,'Enter') → '\nENTER_TEST_UNIQUE\n' ✔
 ```
-`SessionManager.ts:33` + `index.ts:128`
 
-### T14 — session_close
+**T25 — `env`**
 ```
-spawn → list 8 → closeSession(id) → list 7 → getSession throws "not found" ✔
+spawn('bash',[],cwd,{MY_TEST_VAR:'hello123'}) → write('echo $MY_TEST_VAR',true) → "hello123" ✔
 ```
-`SessionManager.ts:180-188`
 
-### T15 — signal tree-kill (CRITICAL FIX)
+**T15 — `signal` tree-kill (flake note)**
 ```
-spawn bash → write('sleep 60 & echo $! > /tmp/menager_test_pid; echo STARTED') → childPid 276460
-ps -p 276460 → exists true
-signal('SIGTERM') via killTree → ps -p 276460 → exists false ✔
-parent status after → "running" (bash survives, only child killed — desired)
+Previous run: childPid 276460 killed ✔
+This run: childPid 285283 stale (from previous harness file, already dead) → before exists=false (flake), after exists=false ✔
+Parent status: running ✔
 ```
-`SessionManager.ts:131-138` `killTree(pid,signal,cb→fallback kill)`. Before fix, child survived.
+Fix: harness should use `mktemp` per run.
 
-### T16 — list count
+**MCP init smoke:**
 ```
-listSessions().length 8 ≥5 ✔
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize"...}' | node build/index.js → {"serverInfo":{"name":"menager","version":"1.0.0"}} ✔
 ```
 
 ---
 
 ## 4. Tool Coverage
 
-| Tool | Schema | Verified |
-|------|--------|----------|
-| `session_spawn` | `command, args, cwd, env, maxBufferLines, terminalType, name, cols, rows` | ✔ T01,T11,T12,T13 |
-| `session_resize` | `sessionId, cols, rows` | ✔ T02 |
-| `session_write` | `sessionId, payload, pressEnter` | ✔ T03 |
-| `session_read` | `tailLines, stripAnsi, clearBuffer` | ✔ T03/T04 |
-| `session_hook` | `pattern, timeoutMs, autoResponse, triggerPayload` | ✔ T05-T08 |
+| Tool | Params | Status |
+|------|--------|--------|
+| `session_spawn` | `command,args,cwd,env,maxBufferLines,terminalType,name,cols,rows` | ✔ T01,T11,T12,T13,T26 |
+| `session_resize` | `sessionId,cols,rows` | ✔ T02 |
+| `session_write` | `payload,pressEnter(false),pressKey` | ✔ T03,T21,T23 |
+| `session_read` | `tailLines,stripAnsi,clearBuffer,offsetLines,grepPattern` via `getLines` | ✔ T04,T18,T19,T20,T27 |
+| `session_hook` | `pattern,timeoutMs,autoResponse,triggerPayload` | ✔ T05-T07 |
 | `session_wait` | `timeoutMs` | ✔ T09/T10 |
-| `session_signal` | `SIGINT/SIGTERM/SIGKILL` via tree-kill | ✔ T15 |
-| `session_close` | `sessionId` | ✔ T14 |
-| `session_list` | — | ✔ T16 |
+| `session_signal` | `tree-kill` | ✔ T15 |
+| `session_close` |  | ✔ T14 |
+| `session_info` | new | ✔ T17/T26 |
+| `session_list` |  | ✔ T24 |
 
 ---
 
-## 5. Remaining for Agent
+## 5. Breaking Changes — Must Document
 
-**P1 left:**
-- `env` merging sanitization (`...process.env,...env` could override PATH)
-- `appendDataToLines` ANSI fragmentation
-- `strip-ansi@7` ESM interop pin
-- `maxBufferLines` eviction + `buffer` memory
-
-**P2 left:**
-- `session_read` offset/grep, `session_send` keys, `session_info`, unified `isError`, logging, vitest suite, README
-
-**Suggested next vitest cases** (copy from T01-T15 as `*.test.ts`):
-```ts
-test('cwd validation', async () => { expect(()=>sm.spawn('bash',[],'/bad')).toThrow(/CWD/) })
-test('tree-kill', async () => { /* T15 */ })
-```
+1. `write` default `pressEnter=false` (was `true`), now sends `\r` not `\n`. Old clients omitting `pressEnter` will see commands not executing. Update README and migrate old harness to `pressEnter:true`.
+2. `Session.read` renamed to `getLines`. Direct `SessionManager` callers must migrate; MCP `session_read` already updated.
 
 ---
 
-## 6. Repro
+## 6. Remaining
+
+- Flaky PID file in T15 harness (use unique file)
+- `env` sanitization, `strip-ansi` interop, buffer fragmentation remain (P1)
+- `isError` unification, logging, README, vitest (P2)
+
+## 7. Repro
 
 ```bash
 cd /home/azzar/project/MCPservers/menager
 npm run build
-node --input-type=module <<'EOF'
-import {SessionManager} from './build/SessionManager.js';
-// paste T01-T15 harness from this report
-EOF
+node /tmp/harness.mjs  # 33 tests
+# or MCP init:
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | node build/index.js
 ```
 
-Artifacts: `todo.md` (updated), `build/*`, `/tmp/menager_test_pid` (child pid).
-
-*MCP stdio server will auto-restart on next opencode MCP call; direct SessionManager tests already prove wrapper logic.*
+Artifacts: `todo.md`, `build/*`, `/tmp/harness.mjs`, `/tmp/menager_test_pid4` (stale).

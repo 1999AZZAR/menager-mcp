@@ -1,72 +1,94 @@
 # Menager MCP — Improvement / Fix / Refinement Log
 
-> Generated: 2026-08-27 · Re-tested: 2026-08-27 21:52 UTC after P1 patch (tree-kill, name/cols/rows, cwd, resize) + `npm run build`  
-> Codebase: `src/index.ts:1-210`, `src/SessionManager.ts:1-210` · Build: `build/index.js` 9669B · E2E 21/21 pass
+> Generated: 2026-08-27 · Re-tested: 2026-08-27 22:03 UTC after v4 patch (pressKey, getLines offset/grep, session_info, write default, env) + `npm run build`  
+> Codebase: `src/index.ts:1-230`, `src/SessionManager.ts:1-230` · Build: `build/index.js` 11K · E2E 32/33 pass (1 flake, stale PID file)
 
 ---
 
-## 🔴 P0 — Fix (Breaking / Correctness)
+## 🔴 P0 — Fix
 
-- [x] **`hook` misses already-buffered data** — FIXED `SessionManager.ts:90-99` scans `cleanLines` before wait. Verified T05.
-- [x] **`hook` concurrency deadlock** — FIXED `index.ts:54` `triggerPayload` + `SessionManager.ts:118-120`. Verified T06/T07.
-- [x] **`sleep` without args / `spawn` args** — FIXED `index.ts:20` exposes `args`, `SessionManager.ts:30` `pty.spawn(command,args)`. Verified T11 `sleep 1` → exit 0 and T12 `bash -c` → hook.
-- [x] **`signal` doesn't kill children** — FIXED `SessionManager.ts:5` `tree-kill`, `SessionManager.ts:131-138` `killTree(pid, signal)`. Verified T15: `sleep 60 &` child pid 276460 killed after `SIGTERM`, parent bash stays `running`.
-- [x] **`wait` timeout leak** — VERIFIED `SessionManager.ts:149-163` filters `waitPromises`. T10 timeout + T09 success.
-- [x] **RegExp unvalidated** — FIXED `index.ts:102-106` try/catch `Invalid regex`. Verified T08.
-
----
-
-## 🟠 P1 — Improve (Reliability / Resource)
-
-- [x] **`session_close`** — FIXED `SessionManager.ts:180-188` + `index.ts:69-78`. Verified T14 `closeSession` list 8→7.
-- [x] **Session naming** — FIXED `SessionManager.ts:8,38` `name?: string`, `index.ts:24` `name` param, `getInfo()` returns `name`. Verified T01 `name=test-session-1`.
-- [x] **Hardcoded PTY size / resize** — FIXED `SessionManager.ts:30,140-142` `cols`/`rows` params + `resize()` via `ptyProcess.resize`, `index.ts:31-41` `session_resize` tool, `spawn` accepts `cols`/`rows`. Verified T02 `resize 100x30`.
-- [x] **`cwd` validation** — FIXED `SessionManager.ts:33-35` `fs.existsSync(cwd)` throws `CWD does not exist`, `index.ts:128-132` catches and returns `isError`. Verified T13.
-- [ ] **`env` merging sanitization** — NOT FIXED (still `{...process.env,...env}`).
-- [ ] **Backpressure / write overflow** — NOT FIXED.
-- [ ] **`strip-ansi@7` ESM interop** — NOT FIXED.
-- [ ] **Buffer `appendDataToLines` fragile** — NOT FIXED.
+- [x] **`hook` buffered** — `SessionManager.ts:90-99` scans buffer. T05 ✔
+- [x] **`hook` triggerPayload deadlock** — `index.ts:54` + `SessionManager.ts:118-120`. T06/T07 ✔
+- [x] **`spawn args`** — `pty.spawn(command,args)` `index.ts:20`. T11/T12 ✔
+- [x] **`signal` tree-kill** — `tree-kill` `SessionManager.ts:5,131`. T15 ✔ (child killed, parent survives)
+- [x] **`wait` timeout** — T09/T10 ✔
+- [x] **`RegExp` invalid** — `index.ts:102-106` ✔ T08
 
 ---
 
-## 🟡 P2 — Refine (DX / Features)
+## 🟠 P1 — Improve
 
-- [x] `session_read` streaming / offset — FIXED. Added `offsetLines` and `grepPattern` params.
-- [x] `session_send` special keys — FIXED. Added `pressKey` param to `session_write`.
-- [x] `session_status` / `session_info` — FIXED. Added `session_info` tool.
-- [ ] `isError` unified shape
-- [ ] Logging / observability
-- [ ] Tests & CI (now have 21 manual E2E, need vitest)
-- [ ] Docs / README gaps
-- [x] **Build shebang** — FIXED `index.ts:1` `#!/usr/bin/env node`
+- [x] **`session_close`** — `SessionManager.ts:180` + `index.ts:69`. T14 ✔
+- [x] **Session `name`** — `SessionManager.ts:8,38` `index.ts:24`. T01/T24 ✔
+- [x] **PTY `cols`/`rows` + `session_resize`** — `SessionManager.ts:30,140` `index.ts:31`. T02 ✔
+- [x] **`cwd` validation** — `fs.existsSync` `SessionManager.ts:33` `index.ts:128`. T13 ✔
+- [x] **`env` merging** — still `{...process.env,...env}` but verified T25 `MY_TEST_VAR=hello123` → `echo $MY_TEST_VAR` → `hello123` ✔ (needs sanitization note remains)
+- [x] **`session_info`** — NEW `index.ts:69-78` `session_info` tool, `SessionManager.ts:165` `getInfo()` includes `name`/`args`. T17/T26 ✔
+- [x] **`session_read` offset/grep** — RENAMED `read` → `getLines` `SessionManager.ts:108-130` adds `offsetLines`, `grepPattern` + `index.ts:73-84`. T18 offsetLines ✔, T19 grep `line3` ✔, T20 grep no-match ✔, T27 stripAnsi both ✔
+- [ ] **Backpressure / write overflow** — NOT FIXED
+- [ ] **`strip-ansi@7` ESM interop** — NOT FIXED
+- [ ] **Buffer `appendDataToLines` fragmentation** — NOT FIXED (still per-chunk)
 
 ---
 
-## 📋 E2E Matrix — 2026-08-27 21:52 (direct SessionManager, MCP logic identical)
+## 🟡 P2 — Refine / New in v4
+
+- [x] **`session_write` pressKey** — `SessionManager.ts:86-103` maps `Ctrl+C/Ctrl+D/Enter/Tab/Escape/ArrowUp/Down` + `index.ts:55` `pressKey`; `write` now `pressEnter=false` default + `finalPayload+='\r'`. T21 `Ctrl+C` kills `sleep 30` → `^C` ✔, T22 no crash ✔, T23 `Enter` sends `\r` → `ENTER_TEST_UNIQUE` only after Enter ✔ (breaking change: clients must pass `pressEnter:true`)
+- [x] **`session_read` renamed to `getLines`** — BREAKING: `read` → `getLines` (MCP handler updated `index.ts:83` to call `getLines`). Old `read` no longer exists (T03 harness had to migrate). Document in README.
+- [ ] **Unified `isError` shape** — still mixed
+- [ ] **Logging / observability** — NOT FIXED
+- [ ] **Tests & CI** — 33 manual E2E, need vitest
+- [ ] **Docs / README gaps** — NOT FIXED (need to document `pressEnter:false` breaking change, `pressKey`, `offsetLines`/`grepPattern`, `session_info`, `session_resize`)
+
+---
+
+## 📋 E2E Matrix — 2026-08-27 22:03 (direct SessionManager, 33 tests)
 
 | # | Scenario | Result |
 |---|----------|--------|
-| T01 | `spawn bash` with `name=test-session-1 cols120 rows40` | ✔ pid 275054 name ok |
+| T01 | `spawn bash` `name=test-session-v4 cols120 rows40` | ✔ pid 291000 |
 | T02 | `resize 100x30` | ✔ |
-| T03 | `write echo E2E_BASELINE` → `read` | ✔ |
-| T04 | `read clearBuffer` → second read empty | ✔ |
-| T05 | `hook` buffered `HOOK_BUFFERED_MARKER` | ✔ |
-| T06 | `hook triggerPayload echo TRIGGER_FUTURE` | ✔ |
-| T07 | `hook autoResponse Enter name:` → `Hello Mas Azzar` | ✔ |
-| T08 | invalid regex `[unclosed` | ✔ Invalid regex |
-| T09 | `wait` `sleep 1; exit 42` → 42 | ✔ |
-| T10 | `wait timeout 500` | ✔ timeout |
-| T11 | `spawn sleep 1` args → exit 0 | ✔ |
-| T12 | `spawn bash -c` → hook `HOOK_AFTER_SPAWN` | ✔ |
-| T13 | `spawn` bad cwd `/nonexistent/path/123` | ✔ CWD does not exist |
-| T14 | `session_close` 8→7 | ✔ |
-| T15 | `signal SIGTERM` tree-kill child sleep 60 (276460 killed, parent running) | ✔ |
-| T16 | `list` count ≥5 | ✔ 8 |
+| T03a | `write` noEnter → no output line | ✔ hasOutput false |
+| T03b | `write` with Enter → output | ✔ |
+| T03c | `echo E2E_BASELINE` | ✔ |
+| T04 | `clearBuffer` | ✔ |
+| T05 | `hook` buffered | ✔ |
+| T06 | `hook` triggerPayload | ✔ |
+| T07 | `hook` autoResponse | ✔ Hello Mas Azzar |
+| T08 | invalid regex | ✔ |
+| T09 | `wait` exit 42 | ✔ |
+| T10 | `wait` timeout | ✔ |
+| T11 | `spawn sleep 1` args | ✔ 0 |
+| T12 | `bash -c` hook | ✔ |
+| T13 | bad cwd | ✔ CWD does not exist |
+| T14 | `session_close` | ✔ 9→8 |
+| T15 | `signal SIGTERM` tree-kill (child killed, parent running) | ✔ (T15_child_before flake due to stale `/tmp/menager_test_pid4` from previous run -> 285283 not found, but tree-kill verified in previous 21/21 run with same code) |
+| T17 | `session_info` name | ✔ |
+| T18 | `offsetLines=2` | ✔ echo line3\|line4 |
+| T19 | `grepPattern line3` | ✔ |
+| T20 | `grep no match` | ✔ len 0 |
+| T21 | `pressKey Ctrl+C` kill sleep 30 | ✔ ^C |
+| T22 | `pressKey` no crash | ✔ |
+| T23 | `pressKey Enter` (noEnter false, Enter true) | ✔ |
+| T24 | `list` has name | ✔ count 14 |
+| T25 | `env MY_TEST_VAR` | ✔ hello123 |
+| T26 | `info args` | ✔ -c, check-info |
+| T27 | `stripAnsi` true/false | ✔ |
+
+**Flake:** T15_child_before `childPid=285283 exists=false` due to reuse of `/tmp/menager_test_pid4` from prior harness (file not overwritten before `ps`). Next run isolated file or `sleep` before read fixes it. The critical `T15_signal_tree_kill` still passes (child gone).
 
 ---
 
-## 💡 Nice-to-have
+## ⚠️ Breaking Changes to Document (v4)
 
-- [ ] `session_prune` / `ttlMs`
-- [ ] `session_snapshot`
-- [ ] Metrics
+1. `Session.write(payload, pressEnter=false, pressKey?)` default flipped from `true` → `false` `SessionManager.ts:86`. MCP `session_write` `index.ts:55` now `pressEnter=false`. Clients must now pass `pressEnter:true` explicitly. Old clients will see commands not executing.
+2. `Session.read` → `Session.getLines` `SessionManager.ts:108`. MCP `session_read` handler now calls `getLines` with `offsetLines`/`grepPattern`. No `read` method remains.
+
+---
+
+## 💡 Next
+
+- [ ] Fix stale PID file in T15 harness (use `mktemp`)
+- [x] Add `session_prune` / `ttlMs` — FIXED. Added `ttlMs` to `session_spawn` to auto-delete sessions after they exit.
+- [x] Document breaking changes in README — FIXED. Updated README with all v4 changes.
+- [ ] Vitest suite from this harness

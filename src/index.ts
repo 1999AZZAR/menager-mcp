@@ -37,7 +37,8 @@ const TOOLS: Tool[] = [
         terminalType: { type: "string", description: "Set to 'dumb' to avoid TUI/cursor artifacts, or 'xterm-256color' for standard colors." },
         name: { type: "string", description: "Optional logical name for this session" },
         cols: { type: "number", description: "Terminal columns (default 80)" },
-        rows: { type: "number", description: "Terminal rows (default 24)" }
+        rows: { type: "number", description: "Terminal rows (default 24)" },
+        ttlMs: { type: "number", description: "Optional Time-To-Live in milliseconds. Auto-closes session after it exits." }
       },
       required: ["command"]
     }
@@ -169,9 +170,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "session_spawn": {
-        const { command, args: cmdArgs = [], cwd = process.cwd(), env = {}, maxBufferLines = 5000, terminalType = 'xterm-256color', name, cols, rows } = args as any;
+        const { command, args: cmdArgs = [], cwd = process.cwd(), env = {}, maxBufferLines = 5000, terminalType = 'xterm-256color', name, cols, rows, ttlMs } = args as any;
         try {
-          const info = sessionManager.spawn(command, cmdArgs, cwd, env, maxBufferLines, terminalType, name, cols, rows);
+          const info = sessionManager.spawn(command, cmdArgs, cwd, env, maxBufferLines, terminalType, name, cols, rows, ttlMs);
           return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
         } catch (e: any) {
           return { isError: true, content: [{ type: "text", text: e.message }] };
