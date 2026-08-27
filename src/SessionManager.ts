@@ -1,9 +1,14 @@
 import * as pty from 'node-pty';
+import { IPty } from 'node-pty';
 import stripAnsi from 'strip-ansi';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+// @ts-ignore
+import killTree from 'tree-kill';
 
 export interface SessionInfo {
   sessionId: string;
+  name?: string;
   pid: number;
   command: string;
   args: string[];
@@ -39,16 +44,22 @@ export class Session {
     cwd: string,
     env: Record<string, string>,
     maxBufferLines: number = 5000,
-    terminalType: string = 'xterm-256color'
+    terminalType: string = 'xterm-256color',
+    public name?: string,
+    cols: number = 80,
+    rows: number = 24
   ) {
+    if (!fs.existsSync(cwd)) {
+      throw new Error(`CWD does not exist: ${cwd}`);
+    }
     this.id = crypto.randomBytes(4).toString('hex');
     this.maxBufferLines = maxBufferLines;
     this.createdAt = new Date().toISOString();
 
     this.ptyProcess = pty.spawn(command, args, {
       name: terminalType,
-      cols: 80,
-      rows: 24,
+      cols: cols,
+      rows: rows,
       cwd: cwd,
       env: { ...process.env, ...env }
     });
@@ -158,7 +169,17 @@ export class Session {
   }
 
   public signal(signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL') {
-    this.ptyProcess.kill(signal);
+    try {
+      killTree(this.ptyProcess.pid, signal, (err: any) => {
+        if (err) this.ptyProcess.kill(signal);
+      });
+    } catch (e) {
+      this.ptyProcess.kill(signal);
+    }
+  }
+
+  public resize(cols: number, rows: number) {
+    this.ptyProcess.resize(cols, rows);
   }
 
   public wait(timeoutMs?: number): Promise<number | null> {
@@ -180,6 +201,7 @@ export class Session {
   public getInfo(): SessionInfo {
     return {
       sessionId: this.id,
+      name: this.name,
       pid: this.ptyProcess.pid,
       command: this.command,
       args: this.args,
@@ -193,8 +215,8 @@ export class Session {
 export class SessionManager {
   private sessions: Map<string, Session> = new Map();
 
-  public spawn(command: string, args: string[] = [], cwd: string = process.cwd(), env: Record<string, string> = {}, maxBufferLines: number = 5000, terminalType: string = 'xterm-256color'): SessionInfo {
-    const session = new Session(command, args, cwd, env, maxBufferLines, terminalType);
+  public spawn(command: string, args: string[] = [], cwd: string = process.cwd(), env: Record<string, string> = {}, maxBufferLines: number = 5000, terminalType: string = 'xterm-256color', name?: string, cols?: number, rows?: number): SessionInfo {
+    const session = new Session(command, args, cwd, env, maxBufferLines, terminalType, name, cols, rows);
     this.sessions.set(session.id, session);
     return session.getInfo();
   }

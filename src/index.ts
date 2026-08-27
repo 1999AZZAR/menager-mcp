@@ -34,9 +34,25 @@ const TOOLS: Tool[] = [
         cwd: { type: "string" },
         env: { type: "object", additionalProperties: { type: "string" } },
         maxBufferLines: { type: "number" },
-        terminalType: { type: "string", description: "Set to 'dumb' to avoid TUI/cursor artifacts, or 'xterm-256color' for standard colors." }
+        terminalType: { type: "string", description: "Set to 'dumb' to avoid TUI/cursor artifacts, or 'xterm-256color' for standard colors." },
+        name: { type: "string", description: "Optional logical name for this session" },
+        cols: { type: "number", description: "Terminal columns (default 80)" },
+        rows: { type: "number", description: "Terminal rows (default 24)" }
       },
       required: ["command"]
+    }
+  },
+  {
+    name: "session_resize",
+    description: "Resizes the PTY terminal dimensions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" },
+        cols: { type: "number" },
+        rows: { type: "number" }
+      },
+      required: ["sessionId", "cols", "rows"]
     }
   },
   {
@@ -139,9 +155,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "session_spawn": {
-        const { command, args: cmdArgs = [], cwd = process.cwd(), env = {}, maxBufferLines = 5000, terminalType = 'xterm-256color' } = args as any;
-        const info = sessionManager.spawn(command, cmdArgs, cwd, env, maxBufferLines, terminalType);
-        return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+        const { command, args: cmdArgs = [], cwd = process.cwd(), env = {}, maxBufferLines = 5000, terminalType = 'xterm-256color', name, cols, rows } = args as any;
+        try {
+          const info = sessionManager.spawn(command, cmdArgs, cwd, env, maxBufferLines, terminalType, name, cols, rows);
+          return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+        } catch (e: any) {
+          return { isError: true, content: [{ type: "text", text: e.message }] };
+        }
+      }
+      case "session_resize": {
+        const { sessionId, cols, rows } = args as any;
+        const session = sessionManager.getSession(sessionId);
+        session.resize(cols, rows);
+        return { content: [{ type: "text", text: JSON.stringify({ sessionId, cols, rows }, null, 2) }] };
       }
       case "session_wait": {
         const { sessionId, timeoutMs } = args as any;
