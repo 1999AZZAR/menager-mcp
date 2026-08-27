@@ -84,31 +84,33 @@ export class Session {
   }
 
   private handleData(data: string) {
-    const cleanData = stripAnsi(data);
+    const chunks = data.split('\r\n').join('\n').split('\n');
+    
+    // Update the last raw line and re-strip it entirely to fix ANSI fragmentation
+    this.rawLines[this.rawLines.length - 1] += chunks[0];
+    this.cleanLines[this.cleanLines.length - 1] = stripAnsi(this.rawLines[this.rawLines.length - 1]);
 
-    this.appendDataToLines(this.rawLines, data);
-    this.appendDataToLines(this.cleanLines, cleanData);
+    for (let i = 1; i < chunks.length; i++) {
+      this.rawLines.push(chunks[i]);
+      this.cleanLines.push(stripAnsi(chunks[i]));
+    }
+
+    while (this.rawLines.length > this.maxBufferLines) {
+      this.rawLines.shift();
+      this.cleanLines.shift();
+    }
+
+    const latestCleanText = this.cleanLines.slice(-chunks.length).join('\n');
 
     for (const hook of this.hooks) {
-      if (hook.pattern.test(cleanData)) {
+      if (hook.pattern.test(latestCleanText) || hook.pattern.test(this.cleanLines.join('\n'))) {
         clearTimeout(hook.timeout);
         this.hooks.delete(hook);
         if (hook.autoResponse) {
           this.write(hook.autoResponse, true);
         }
-        hook.resolve(cleanData);
+        hook.resolve(latestCleanText);
       }
-    }
-  }
-
-  private appendDataToLines(lines: string[], data: string) {
-    const chunks = data.split('\r\n').join('\n').split('\n');
-    lines[lines.length - 1] += chunks[0];
-    for (let i = 1; i < chunks.length; i++) {
-      lines.push(chunks[i]);
-    }
-    while (lines.length > this.maxBufferLines) {
-      lines.shift();
     }
   }
 

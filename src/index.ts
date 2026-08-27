@@ -185,7 +185,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const info = sessionManager.spawn(command, cmdArgs, cwd, env, maxBufferLines, terminalType, name, cols, rows, ttlMs);
           return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
         } catch (e: any) {
-          return { isError: true, content: [{ type: "text", text: e.message }] };
+          return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: e.message || String(e) }) }] };
         }
       }
       case "session_resize": {
@@ -201,7 +201,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const exitCode = await session.wait(timeoutMs);
           return { content: [{ type: "text", text: JSON.stringify({ sessionId, exitCode }, null, 2) }] };
         } catch (e: any) {
-          return { isError: true, content: [{ type: "text", text: e.message }] };
+          return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: e.message || String(e) }) }] };
         }
       }
       case "session_write": {
@@ -233,13 +233,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         try {
           regex = new RegExp(pattern);
         } catch (e: any) {
-          return { isError: true, content: [{ type: "text", text: `Invalid regex: ${e.message}` }] };
+          return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: `Invalid regex: ${e.message}` }) }] };
         }
         try {
           const matchedChunk = await session.hook(regex, timeoutMs, autoResponse, triggerPayload);
           return { content: [{ type: "text", text: JSON.stringify({ matched: true, matchedChunk, autoResponded: !!autoResponse }, null, 2) }] };
         } catch (e: any) {
-          return { isError: true, content: [{ type: "text", text: e.message }] };
+          return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: e.message || String(e) }) }] };
         }
       }
       case "session_close": {
@@ -263,7 +263,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   } catch (error: any) {
     return {
       isError: true,
-      content: [{ type: "text", text: error.message || String(error) }],
+      content: [{ type: "text", text: JSON.stringify({ error: error.message || String(error) }) }],
     };
   }
 });
