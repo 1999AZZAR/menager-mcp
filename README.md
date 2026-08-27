@@ -128,14 +128,6 @@ Returns a single session's live metadata and metrics.
 ### `session_list`
 Lists all active and completed sessions managed by the server. No parameters required.
 
-## Breaking Changes (v8)
-
-If you are upgrading from earlier versions, please note the following breaking changes:
-1. **`session_write` defaults:** The `pressEnter` parameter now defaults to `false` (was `true`). You must pass `pressEnter: true` explicitly if you want to execute commands immediately.
-2. **`session_read` deprecation:** The underlying `Session.read` method was renamed to `Session.getLines` to support `offsetLines` and `grepPattern`. The MCP tool name remains `session_read`.
-3. **Unified `isError` JSON:** All tool errors now return a JSON stringified object in the text payload `{"error": "message"}` rather than plain text.
-4. **`strip-ansi` interop:** Downgraded `strip-ansi` to `^6.0.1` to maximize CommonJS/ESM interop stability for consumers.
-
 ## Configuring with AI Assistants
 
 ### Configuring with Roo Code or Cline
