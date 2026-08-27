@@ -29,7 +29,7 @@
 - [x] **`ttlMs` auto-close** — `SessionManager.ts:13,50,216` + `index.ts:28`. T28/T29 ✔
 - [x] **Buffer `appendDataToLines` ANSI fragmentation** — `SessionManager.ts:86-98` re-strip `rawLines[last]` + `latestCleanText` check. Verified build `SessionManager.js:60-71`
 - [x] **Backpressure / write overflow** — **FIXED** `SessionManager.ts:86-103` `write` now `async`, chunks `16384` with `5ms` delay `for (let i...) { pty.write(slice); await setTimeout(5) }`, returns `Promise<number>`. MCP `session_write` now `await session.write` `index.ts:117`. Manual 50KB/100KB payloads → `DONE_LARGE`/`HUGE_DONE` ✔, no drop
-- [ ] **`strip-ansi@7` ESM interop** — NOT FIXED (still `import stripAnsi from 'strip-ansi'`)
+- [x] **`strip-ansi@7` ESM interop** — **FIXED** pinned to `^6.0.1` for native CommonJS/ESM compatibility.
 
 ---
 
@@ -40,7 +40,7 @@
 - [x] **Unified `isError` shape** — `index.ts:176,193,226,233,257` all `{"error":...}` JSON `build/index.js:176`. T08/T10 ✔
 - [x] **Logging / observability** — **FIXED** `index.ts:54` `console.error(`[MCP] Tool: ${name} | Session: ${args?.sessionId || 'N/A'}`)` `build/index.js` grep 1 ✔, `menager MCP server running on stdio` already existed
 - [ ] **Tests & CI** — 53 manual E2E, need vitest
-- [ ] **Docs / README gaps** — NOT FIXED
+- [x] **Docs / README gaps** — **FIXED** Added "Breaking Changes (v8)" block.
 
 ---
 
