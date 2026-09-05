@@ -17,12 +17,8 @@
 - [Usage](#usage)
   - [Starting the Server](#starting-the-server)
 - [Available Tools](#available-tools)
-  - [session_spawn](#session_spawn)
-  - [session_write](#session_write)
-  - [session_read](#session_read)
-  - [session_hook](#session_hook)
-  - [session_signal](#session_signal)
-  - [session_list](#session_list)
+  - [Generic PTY](#generic-pty)
+  - [OpenCode Native Orchestration](#opencode-native-orchestration)
 - [Configuring with AI Assistants](#configuring-with-ai-assistants)
 
 ## Features
@@ -63,6 +59,8 @@ node build/index.js
 ```
 
 ## Available Tools
+
+### Generic PTY
 
 ### `session_spawn`
 Spawns a new child PTY session.
@@ -130,6 +128,22 @@ Returns a single session's live metadata and metrics.
 
 ### `session_list`
 Lists all active and completed sessions managed by the server. No parameters required.
+
+### OpenCode Native Orchestration
+
+Native `opencode` CLI integration (see [CLI docs](https://opencode.ai/docs/cli/)) for agent routing and multi-session orchestration. Each spawned agent lives in its own PTY session with `meta.kind: "agent"` tracking (`agent`, `model`, `dir`, resolved opencode session id).
+
+| Tool | Maps to | Purpose |
+| :--- | :--- | :--- |
+| `agent_spawn` | `opencode run "<prompt>" [--agent --model --title --share --attach]` | Spawn an agent run in a managed PTY; returns `sessionId` for routing. |
+| `agent_send` | PTY write, or `opencode run --session <id> "<msg>"` (falls back to `--continue`) | Follow-up message to a live or exited agent. |
+| `agent_fork` | `opencode run --session <id> --fork "<msg>"` | Branch a session into a new tracked session. |
+| `agent_list` | menager tracking + `opencode session list --format json` | List routed agents merged with native sessions. |
+| `agent_info` | session metadata + resolved opencode id + output preview | Inspect one agent. |
+| `agent_close` | close PTY, optionally `opencode session delete <id>` | Teardown with `deleteOpencodeSession`. |
+| `opencode_status` | `opencode --version` + `opencode agent list` | CLI health, defined agents, tracked counts. |
+
+Set a custom binary via `OPENCODE_BIN` env (default `opencode`). Prompts are capped at 8000 chars; `agent`/`model` values are strictly validated (`agent` alphanumerics, `model` as `provider/model`); all subprocesses spawn with `shell: false` (no shell injection).
 
 ## Configuring with AI Assistants
 

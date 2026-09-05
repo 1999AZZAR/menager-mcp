@@ -1,6 +1,6 @@
 {
-  "name": "menager",
-  "version": "1.0.0",
+  "name": "menager-mcp",
+  "version": "1.1.0",
   "description": "A TypeScript-based MCP server for inter-session terminal orchestration, pseudo-terminal (PTY) lifecycle management, ring-buffered I/O multiplexing, and reactive event hooking across polyglot execution harnesses.",
   "type": "module",
   "bin": {

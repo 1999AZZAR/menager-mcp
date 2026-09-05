@@ -6,6 +6,17 @@ import * as fs from 'fs';
 // @ts-ignore
 import killTree from 'tree-kill';
 
+export interface AgentMeta {
+  kind: 'pty' | 'agent';
+  agent?: string;
+  model?: string;
+  dir?: string;
+  title?: string;
+  promptPreview?: string;
+  opencodeSessionId?: string | null;
+  parentSessionId?: string | null;
+}
+
 export interface SessionInfo {
   sessionId: string;
   name?: string;
@@ -16,6 +27,7 @@ export interface SessionInfo {
   exitCode: number | null;
   createdAt: string;
   ttlMs?: number;
+  meta?: AgentMeta;
 }
 
 interface SessionHook {
@@ -26,6 +38,8 @@ interface SessionHook {
   autoResponse?: string;
 }
 
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
 export class Session {
   public id: string;
   public ptyProcess: pty.IPty;
@@ -33,6 +47,7 @@ export class Session {
   public status: 'running' | 'exited' = 'running';
   public exitCode: number | null = null;
   public createdAt: string;
+  public meta: AgentMeta = { kind: 'pty' };
 
   private rawLines: string[] = [''];
   private cleanLines: string[] = [''];
@@ -240,6 +255,14 @@ export class Session {
     });
   }
 
+  public resolveOpencodeSessionId(): string | null {
+    const text = this.cleanLines.join('\n');
+    const near = text.match(/session[^0-9a-f]{0,24}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    if (near) return near[1];
+    const any = text.match(UUID_RE);
+    return any ? any[0] : null;
+  }
+
   public getInfo(): SessionInfo {
     return {
       sessionId: this.id,
@@ -249,7 +272,8 @@ export class Session {
       args: this.args,
       status: this.status,
       exitCode: this.exitCode,
-      createdAt: this.createdAt
+      createdAt: this.createdAt,
+      meta: this.meta
     };
   }
 }
@@ -257,11 +281,18 @@ export class Session {
 export class SessionManager {
   private sessions: Map<string, Session> = new Map();
 
-  public spawn(command: string, args: string[] = [], cwd: string = process.cwd(), env: Record<string, string> = {}, maxBufferLines: number = 5000, terminalType: string = 'xterm-256color', name?: string, cols?: number, rows?: number, ttlMs?: number): SessionInfo {
+  public spawn(command: string, args: string[] = [], cwd: string = process.cwd(), env: Record<string, string> = {}, maxBufferLines: number = 5000, terminalType: string = 'xterm-256color', name?: string, cols?: number, rows?: number, ttlMs?: number, meta?: AgentMeta): SessionInfo {
     const session = new Session(command, args, cwd, env, maxBufferLines, terminalType, name, cols, rows, ttlMs, () => {
       this.sessions.delete(session.id);
     });
+    if (meta) session.meta = { ...session.meta, ...meta };
     this.sessions.set(session.id, session);
+    return session.getInfo();
+  }
+
+  public setMeta(id: string, patch: Partial<AgentMeta>): SessionInfo {
+    const session = this.getSession(id);
+    session.meta = { ...session.meta, ...patch };
     return session.getInfo();
   }
 
