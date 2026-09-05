@@ -142,6 +142,17 @@ Native `opencode` CLI integration (see [CLI docs](https://opencode.ai/docs/cli/)
 | `agent_info` | session metadata + resolved opencode id + output preview | Inspect one agent. |
 | `agent_close` | close PTY, optionally `opencode session delete <id>` | Teardown with `deleteOpencodeSession`. |
 | `opencode_status` | `opencode --version` + `opencode agent list` | CLI health, defined agents, tracked counts. |
+| `agent_create` | `opencode agent create --path --description --mode --permissions --model` | Define new agents for later `agent_spawn`. |
+| `opencode_models` | `opencode models [provider] [--refresh] [--verbose]` | Model discovery for `agent_spawn --model`. |
+| `opencode_stats` | `opencode stats [--days --tools --models --project]` | Usage/cost observability. |
+| `opencode_export` / `opencode_import` | `opencode export [id]` / `import <file>` | Session portability. |
+| `opencode_session_delete` | `opencode session delete <id>` | Standalone native delete. |
+| `opencode_mcp_list` | `opencode mcp list` | MCP connection health. |
+| `opencode_auth_list` | `opencode auth list` | Provider auth names (read-only, no secrets). |
+| `opencode_db` | `opencode db [query] [--format]` | Direct db inspection. |
+| `opencode_server_spawn` | `opencode serve\|web\|acp [--port --hostname]` in a managed PTY | Warm server for `agent_spawn --attach`. |
+
+Deliberately excluded: `tui` (interactive), `auth login/logout` (interactive secrets), `upgrade`/`uninstall` (host-destructive), `github`/`plugin`/`pr` (repo admin — run directly).
 
 Set a custom binary via `OPENCODE_BIN` env (default `opencode`). Prompts are capped at 8000 chars; `agent`/`model` values are strictly validated (`agent` alphanumerics, `model` as `provider/model`); all subprocesses spawn with `shell: false` (no shell injection).
 

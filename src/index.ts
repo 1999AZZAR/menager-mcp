@@ -55,6 +55,25 @@ function buildRunArgs(o: { message: string; session?: string; fork?: boolean; sh
   return a;
 }
 
+function assertMode(v: unknown): string | undefined {
+  if (v === undefined) return undefined;
+  if (v !== "all" && v !== "primary" && v !== "subagent") throw new Error("mode must be all|primary|subagent");
+  return v as string;
+}
+
+function assertSafePath(v: unknown, what: string): string {
+  if (typeof v !== "string" || !v.trim()) throw new Error(`${what} must be a non-empty string`);
+  if (v.includes("..") || v.length > 1024) throw new Error(`${what} looks unsafe`);
+  return v;
+}
+
+function assertPort(v: unknown): number | undefined {
+  if (v === undefined) return undefined;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error("port must be 1-65535");
+  return n;
+}
+
 function runOpencodeSync(args: string[], cwd?: string, timeoutMs = 15000): { ok: boolean; stdout: string; stderr: string; error?: string } {
   try {
     const r = spawnSync(OPENCODE_BIN, args, { cwd: cwd || process.cwd(), timeout: timeoutMs, encoding: "utf-8", shell: false, maxBuffer: 2 * 1024 * 1024 });
@@ -310,6 +329,126 @@ const TOOLS: Tool[] = [
       properties: {},
       required: []
     }
+  },
+  {
+    name: "agent_create",
+    description: "Create a new opencode agent file (opencode agent create --path --description --mode --permissions --model). Non-interactive when all of path/description/mode/permissions are given.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Directory for the agent file (defaults to global or .opencode/agent)" },
+        description: { type: "string", description: "What the agent should do" },
+        mode: { type: "string", enum: ["all", "primary", "subagent"] },
+        permissions: { type: "string", description: "Comma-separated allow list (bash,read,edit,glob,grep,webfetch,task,todowrite,websearch,lsp,skill); omitted = denied" },
+        model: { type: "string", description: "provider/model" }
+      },
+      required: ["description"]
+    }
+  },
+  {
+    name: "opencode_models",
+    description: "List available models (opencode models [provider] [--refresh] [--verbose]).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: { type: "string" },
+        refresh: { type: "boolean" },
+        verbose: { type: "boolean" }
+      },
+      required: []
+    }
+  },
+  {
+    name: "opencode_stats",
+    description: "Token usage and cost statistics (opencode stats).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "number", description: "Last N days" },
+        topTools: { type: "number", description: "Number of tools to show" },
+        topModels: { type: "number", description: "Show top N model breakdown" },
+        project: { type: "string", description: "Filter by project" }
+      },
+      required: []
+    }
+  },
+  {
+    name: "opencode_export",
+    description: "Export opencode session data as JSON (opencode export [sessionID]).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" },
+        sanitize: { type: "boolean", description: "Redact sensitive transcript/file data" }
+      },
+      required: ["sessionId"]
+    }
+  },
+  {
+    name: "opencode_import",
+    description: "Import opencode session data from a JSON file (opencode import <file>).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "Absolute path to a session JSON file" }
+      },
+      required: ["file"]
+    }
+  },
+  {
+    name: "opencode_session_delete",
+    description: "Delete an opencode session (opencode session delete <sessionID>). Standalone; agent_close also offers this.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" }
+      },
+      required: ["sessionId"]
+    }
+  },
+  {
+    name: "opencode_mcp_list",
+    description: "List configured MCP servers and connection status (opencode mcp list).",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: "opencode_auth_list",
+    description: "List authenticated providers (opencode auth list). Read-only; names only, no secrets.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: "opencode_db",
+    description: "Query the opencode database (opencode db [query]). Read with no query prints the db path context.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "SQL-ish query string (max 2000 chars)" },
+        format: { type: "string", enum: ["json", "tsv"] }
+      },
+      required: []
+    }
+  },
+  {
+    name: "opencode_server_spawn",
+    description: "Spawn a long-running opencode server (serve|web|acp) in a managed PTY so agent_spawn --attach has a warm target and avoids MCP cold boot.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["serve", "web", "acp"], description: "Server flavour" },
+        port: { type: "number", description: "Port to listen on" },
+        hostname: { type: "string", description: "Hostname to listen on" },
+        name: { type: "string", description: "Logical session name" }
+      },
+      required: ["mode"]
+    }
   }
 ];
 
@@ -477,6 +616,100 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return { content: [{ type: "text", text: JSON.stringify({ sessionId, closed: true, opencodeDeleted: r.ok, opencodeSessionId: opencodeId }, null, 2) }] };
         }
         return { content: [{ type: "text", text: JSON.stringify({ sessionId, closed: true, opencodeSessionId: opencodeId }, null, 2) }] };
+      }
+      case "agent_create": {
+        const { path, description, mode, permissions, model } = args as any;
+        if (typeof description !== "string" || !description.trim() || description.length > 2000) throw new Error("description must be 1-2000 chars");
+        const a = ["agent", "create"];
+        if (path !== undefined) a.push("--path", assertSafePath(path, "path"));
+        a.push("--description", (description as string).slice(0, 2000));
+        const m = assertMode(mode);
+        if (m) a.push("--mode", m);
+        if (permissions !== undefined) {
+          if (typeof permissions !== "string" || !/^[a-z,]+$/.test(permissions)) throw new Error("permissions must be a comma-separated allow list");
+          a.push("--permissions", permissions);
+        }
+        const mdl = assertModel(model);
+        if (mdl) a.push("--model", mdl);
+        const r = runOpencodeSync(a, undefined, 30000);
+        return { content: [{ type: "text", text: JSON.stringify({ ok: r.ok, stdout: r.stdout.slice(0, 4000), stderr: r.stderr.slice(0, 1000) }, null, 2) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_models": {
+        const { provider, refresh, verbose } = args as any;
+        const a = ["models"];
+        if (provider !== undefined) {
+          if (typeof provider !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(provider)) throw new Error("invalid provider");
+          a.push(provider);
+        }
+        if (refresh === true) a.push("--refresh");
+        if (verbose === true) a.push("--verbose");
+        const r = runOpencodeSync(a, undefined, 60000);
+        return { content: [{ type: "text", text: (r.stdout || r.stderr || r.error || "").slice(0, 8000) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_stats": {
+        const { days, topTools, topModels, project } = args as any;
+        const a = ["stats"];
+        if (days !== undefined) { const n = Number(days); if (!Number.isInteger(n) || n < 1 || n > 3650) throw new Error("days must be 1-3650"); a.push("--days", String(n)); }
+        if (topTools !== undefined) { const n = Number(topTools); if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error("topTools must be 1-100"); a.push("--tools", String(n)); }
+        if (topModels !== undefined) { const n = Number(topModels); if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error("topModels must be 1-100"); a.push("--models", String(n)); }
+        if (project !== undefined) a.push("--project", assertSafePath(project, "project"));
+        const r = runOpencodeSync(a, undefined, 30000);
+        return { content: [{ type: "text", text: (r.stdout || r.stderr || r.error || "").slice(0, 8000) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_export": {
+        const { sessionId, sanitize } = args as any;
+        if (typeof sessionId !== "string" || !/^[0-9a-f-]{8,64}$/i.test(sessionId)) throw new Error("invalid sessionId");
+        const a = ["export", sessionId];
+        if (sanitize === true) a.push("--sanitize");
+        const r = runOpencodeSync(a, undefined, 30000);
+        return { content: [{ type: "text", text: (r.stdout || r.stderr || r.error || "").slice(0, 20000) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_import": {
+        const { file } = args as any;
+        const f = assertSafePath(file, "file");
+        const r = runOpencodeSync(["import", f], undefined, 30000);
+        return { content: [{ type: "text", text: JSON.stringify({ ok: r.ok, stdout: r.stdout.slice(0, 4000), stderr: r.stderr.slice(0, 1000) }, null, 2) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_session_delete": {
+        const { sessionId } = args as any;
+        if (typeof sessionId !== "string" || !/^[0-9a-f-]{8,64}$/i.test(sessionId)) throw new Error("invalid sessionId");
+        const r = runOpencodeSync(["session", "delete", sessionId]);
+        return { content: [{ type: "text", text: JSON.stringify({ sessionId, deleted: r.ok, detail: (r.stdout || r.stderr || "").slice(0, 500) }, null, 2) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_mcp_list": {
+        const r = runOpencodeSync(["mcp", "list"], undefined, 30000);
+        return { content: [{ type: "text", text: (r.stdout || r.stderr || r.error || "").slice(0, 8000) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_auth_list": {
+        const r = runOpencodeSync(["auth", "list"], undefined, 30000);
+        return { content: [{ type: "text", text: (r.stdout || r.stderr || r.error || "").slice(0, 4000) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_db": {
+        const { query, format } = args as any;
+        const a = ["db"];
+        if (query !== undefined) {
+          if (typeof query !== "string" || !query.trim() || query.length > 2000) throw new Error("query must be 1-2000 chars");
+          a.push(query);
+        }
+        if (format !== undefined) {
+          if (format !== "json" && format !== "tsv") throw new Error("format must be json|tsv");
+          a.push("--format", format);
+        }
+        const r = runOpencodeSync(a, undefined, 30000);
+        return { content: [{ type: "text", text: (r.stdout || r.stderr || r.error || "").slice(0, 8000) }], isError: r.ok ? undefined : true };
+      }
+      case "opencode_server_spawn": {
+        const { mode, port, hostname, name } = args as any;
+        if (mode !== "serve" && mode !== "web" && mode !== "acp") throw new Error("mode must be serve|web|acp");
+        const a = [mode as string];
+        const p = assertPort(port);
+        if (p) a.push("--port", String(p));
+        if (hostname !== undefined) {
+          if (typeof hostname !== "string" || !/^[a-zA-Z0-9.-]{1,253}$/.test(hostname)) throw new Error("invalid hostname");
+          a.push("--hostname", hostname);
+        }
+        const info = sessionManager.spawn(OPENCODE_BIN, a, process.cwd(), {}, 5000, "xterm-256color", typeof name === "string" ? name.slice(0, 64) : `opencode-${mode}`, undefined, undefined, undefined, { kind: "pty", promptPreview: `opencode ${a.join(" ")}`.slice(0, 200) });
+        return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       }
       case "opencode_status": {
         const ver = runOpencodeSync(["--version"], undefined, 10000);
