@@ -15,6 +15,23 @@ export interface AgentMeta {
   promptPreview?: string;
   opencodeSessionId?: string | null;
   parentSessionId?: string | null;
+  /** P0-B4: RunStore linkage — every spawn carries run/step identity when run under a workflow. */
+  run_id?: string | null;
+  step_id?: string | null;
+}
+
+/** P0-B4 quotas: env-overridable, safe defaults so one client can't fork-bomb the host. */
+export function ribosomeQuotas(): { maxSessions: number; defaultTtlMs: number; maxTtlMs: number; maxBufferLines: number } {
+  const num = (v: string | undefined, dflt: number): number => {
+    const n = v === undefined ? NaN : Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : dflt;
+  };
+  return {
+    maxSessions: num(process.env.HELA_RIBOSOME_MAX_SESSIONS, 20),
+    defaultTtlMs: num(process.env.HELA_RIBOSOME_DEFAULT_TTL_MS, 30 * 60 * 1000),
+    maxTtlMs: num(process.env.HELA_RIBOSOME_MAX_TTL_MS, 4 * 60 * 60 * 1000),
+    maxBufferLines: num(process.env.HELA_RIBOSOME_MAX_BUFFER_LINES, 5000),
+  };
 }
 
 export interface SessionInfo {
@@ -282,12 +299,28 @@ export class SessionManager {
   private sessions: Map<string, Session> = new Map();
 
   public spawn(command: string, args: string[] = [], cwd: string = process.cwd(), env: Record<string, string> = {}, maxBufferLines: number = 5000, terminalType: string = 'xterm-256color', name?: string, cols?: number, rows?: number, ttlMs?: number, meta?: AgentMeta): SessionInfo {
-    const session = new Session(command, args, cwd, env, maxBufferLines, terminalType, name, cols, rows, ttlMs, () => {
+    const q = ribosomeQuotas();
+    if (this.sessions.size >= q.maxSessions) {
+      throw new Error(`session quota exceeded: ${this.sessions.size}/${q.maxSessions} active (HELA_RIBOSOME_MAX_SESSIONS)`);
+    }
+    const clampedBuffer = Math.min(Math.max(100, Math.floor(maxBufferLines) || 5000), q.maxBufferLines);
+    // TTL: default when unset so idle sessions can't linger forever; clamped to max.
+    const ttl = ttlMs === undefined ? q.defaultTtlMs : Math.min(Math.max(0, Math.floor(ttlMs)), q.maxTtlMs);
+    // Propagate RunStore identity into the child env when linked.
+    const childEnv = { ...env };
+    if (meta?.run_id && !childEnv.HELA_RUN_ID) childEnv.HELA_RUN_ID = String(meta.run_id);
+    if (meta?.step_id && !childEnv.HELA_STEP_ID) childEnv.HELA_STEP_ID = String(meta.step_id);
+    const session = new Session(command, args, cwd, childEnv, clampedBuffer, terminalType, name, cols, rows, ttl, () => {
       this.sessions.delete(session.id);
     });
     if (meta) session.meta = { ...session.meta, ...meta };
     this.sessions.set(session.id, session);
     return session.getInfo();
+  }
+
+  /** Attach (or re-attach) RunStore identity to an existing session. */
+  public linkRun(id: string, run_id: string, step_id?: string): SessionInfo {
+    return this.setMeta(id, { run_id, ...(step_id ? { step_id } : {}) });
   }
 
   public setMeta(id: string, patch: Partial<AgentMeta>): SessionInfo {

@@ -156,6 +156,17 @@ Deliberately excluded: `tui` (interactive), `auth login/logout` (interactive sec
 
 Set a custom binary via `OPENCODE_BIN` env (default `opencode`). Prompts are capped at 8000 chars; `agent`/`model` values are strictly validated (`agent` alphanumerics, `model` as `provider/model`); all subprocesses spawn with `shell: false` (no shell injection).
 
+## HeLa session quotas & run linkage (P0-B4, all opt-in overrides)
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `HELA_RIBOSOME_MAX_SESSIONS` | `20` | Max live sessions; `spawn` throws `session quota exceeded` past it |
+| `HELA_RIBOSOME_DEFAULT_TTL_MS` | `1800000` (30m) | Idle TTL for new sessions |
+| `HELA_RIBOSOME_MAX_TTL_MS` | `14400000` (4h) | TTL is clamped to this ceiling |
+| `HELA_RIBOSOME_MAX_BUFFER_LINES` | `5000` | Session output buffer cap |
+
+`session_spawn`/`agent_spawn` accept optional `run_id`/`step_id` linking the session to a Mitosis RunStore run; the ids are also inherited from `HELA_RUN_ID`/`HELA_STEP_ID` env and propagated to child processes. `linkRun` attaches a run id to an existing session.
+
 ## Configuring with AI Assistants
 
 ### Configuring with Roo Code or Cline

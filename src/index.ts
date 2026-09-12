@@ -111,7 +111,9 @@ const TOOLS: Tool[] = [
         name: { type: "string", description: "Optional logical name for this session" },
         cols: { type: "number", description: "Terminal columns (default 80)" },
         rows: { type: "number", description: "Terminal rows (default 24)" },
-        ttlMs: { type: "number", description: "Optional Time-To-Live in milliseconds. Auto-closes session after it exits." }
+        ttlMs: { type: "number", description: "Optional Time-To-Live in milliseconds. Auto-closes session after it exits." },
+        run_id: { type: "string", description: "P0-B4: RunStore run id to link this session to" },
+        step_id: { type: "string", description: "P0-B4: RunStore step id to link this session to" }
       },
       required: ["command"]
     }
@@ -255,7 +257,9 @@ const TOOLS: Tool[] = [
         attach: { type: "string", description: "Attach to a running opencode server URL" },
         name: { type: "string", description: "Logical name for routing" },
         cols: { type: "number" },
-        rows: { type: "number" }
+        rows: { type: "number" },
+        run_id: { type: "string", description: "P0-B4: RunStore run id to link this agent to" },
+        step_id: { type: "string", description: "P0-B4: RunStore step id to link this agent to" }
       },
       required: ["prompt"]
     }
@@ -465,9 +469,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "session_spawn": {
-        const { command, args: cmdArgs = [], cwd = process.cwd(), env = {}, maxBufferLines = 5000, terminalType = 'xterm-256color', name, cols, rows, ttlMs } = args as any;
+        const { command, args: cmdArgs = [], cwd = process.cwd(), env = {}, maxBufferLines = 5000, terminalType = 'xterm-256color', name, cols, rows, ttlMs, run_id, step_id } = args as any;
         try {
-          const info = sessionManager.spawn(command, cmdArgs, cwd, env, maxBufferLines, terminalType, name, cols, rows, ttlMs);
+          const meta = (run_id || step_id) ? { kind: 'pty' as const, run_id: run_id ?? null, step_id: step_id ?? null } : undefined;
+          const info = sessionManager.spawn(command, cmdArgs, cwd, env, maxBufferLines, terminalType, name, cols, rows, ttlMs, meta);
           return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
         } catch (e: any) {
           return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: e.message || String(e) }) }] };
@@ -543,7 +548,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(list, null, 2) }] };
       }
       case "agent_spawn": {
-        const { prompt: rawPrompt, agent: rawAgent, model: rawModel, cwd = process.cwd(), title, format, share, attach, name, cols, rows } = args as any;
+        const { prompt: rawPrompt, agent: rawAgent, model: rawModel, cwd = process.cwd(), title, format, share, attach, name, cols, rows, run_id, step_id } = args as any;
         const prompt = assertPrompt(rawPrompt);
         const agent = assertAgent(rawAgent);
         const model = assertModel(rawModel);
@@ -552,7 +557,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const info = sessionManager.spawn(OPENCODE_BIN, runArgs, cwd, {}, 5000, "xterm-256color", name, cols, rows, undefined, {
           kind: "agent", agent, model, dir: cwd,
           title: typeof title === "string" ? title.slice(0, 120) : undefined,
-          promptPreview: prompt.slice(0, 200)
+          promptPreview: prompt.slice(0, 200),
+          run_id: typeof run_id === "string" ? run_id : null,
+          step_id: typeof step_id === "string" ? step_id : null
         });
         return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       }
@@ -569,7 +576,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!opencodeId) runArgs.splice(1, 0, "--continue");
         const info = sessionManager.spawn(OPENCODE_BIN, runArgs, session.meta.dir || process.cwd(), {}, 5000, "xterm-256color", session.name, undefined, undefined, undefined, {
           kind: "agent", agent: session.meta.agent, model: session.meta.model, dir: session.meta.dir,
-          promptPreview: message.slice(0, 200), parentSessionId: sessionId, opencodeSessionId: opencodeId
+          promptPreview: message.slice(0, 200), parentSessionId: sessionId, opencodeSessionId: opencodeId,
+          run_id: session.meta.run_id ?? null, step_id: session.meta.step_id ?? null
         });
         return { content: [{ type: "text", text: JSON.stringify({ resumed: true, via: opencodeId ? "opencode-session" : "opencode-continue", previousSessionId: sessionId, next: info }, null, 2) }] };
       }
@@ -582,7 +590,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const runArgs = buildRunArgs({ message, session: opencodeId, fork: true, model: session.meta.model, agent: session.meta.agent });
         const info = sessionManager.spawn(OPENCODE_BIN, runArgs, session.meta.dir || process.cwd(), {}, 5000, "xterm-256color", typeof name === "string" ? name : undefined, undefined, undefined, undefined, {
           kind: "agent", agent: session.meta.agent, model: session.meta.model, dir: session.meta.dir,
-          promptPreview: message.slice(0, 200), parentSessionId: sessionId, opencodeSessionId: opencodeId
+          promptPreview: message.slice(0, 200), parentSessionId: sessionId, opencodeSessionId: opencodeId,
+          run_id: session.meta.run_id ?? null, step_id: session.meta.step_id ?? null
         });
         return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       }
