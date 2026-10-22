@@ -115,7 +115,7 @@ Sends a POSIX signal to the target session (with recursive process-tree terminat
 - **`signal`** *(string)*: Signal to deliver (`SIGINT`, `SIGTERM`, `SIGKILL`). **Required.**
 
 ### `session_close`
-Force kills the session's process tree and deletes memory buffers immediately.
+Force kills the interactive PTY session's process tree and deletes memory buffers immediately.
 - **`sessionId`** *(string)*: Target session ID. **Required.**
 
 ### `session_prune`
@@ -127,7 +127,7 @@ Returns a single session's live metadata and metrics.
 - **`sessionId`** *(string)*: Target session ID. **Required.**
 
 ### `session_list`
-Lists all active and completed sessions managed by the server. No parameters required.
+Lists all active and completed interactive PTY sessions managed by the server. No parameters required.
 
 ### OpenCode Native Orchestration
 

@@ -190,7 +190,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "session_close",
-    description: "Kills and removes a session, freeing its memory.",
+    description: "Kills and removes an interactive PTY session managed by this server, freeing its memory.",
     inputSchema: {
       type: "object",
       properties: {
@@ -234,7 +234,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "session_list",
-    description: "Lists all active and completed sessions managed by the server.",
+    description: "Lists all active and completed interactive PTY sessions managed by this server.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -430,7 +430,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "opencode_db",
-    description: "Query the opencode database (opencode db [query]). Read with no query prints the db path context.",
+    description: "Restricted to OpenCode session database inspection; use hela-genome execute_sql/query_data for the HeLa memory graph. Query the opencode database (opencode db [query]). Read with no query prints the db path context.",
     inputSchema: {
       type: "object",
       properties: {
