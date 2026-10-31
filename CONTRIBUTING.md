@@ -35,7 +35,7 @@ Thank you for your interest in contributing to the Menager MCP Server! This docu
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/1999AZZAR/menager.git
+   git clone https://github.com/Hela-Ecosystem/menager.git
    cd menager
    ```
 
