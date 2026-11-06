@@ -1,5 +1,7 @@
 # menager — idea
 
+**Historical design notes.** Planned interfaces, version examples, and performance goals below are not current release acceptance evidence. See [README](README.md) and [canonical tools](docs/TOOLS.md) for the current package and advertised API.
+
 > **One agent to rule the terminals.**  
 > A TypeScript MCP server that turns any CLI — Python, Node, bash, sub-agents — into a controllable, observable, hookable PTY harness.
 

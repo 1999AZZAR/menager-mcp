@@ -1,5 +1,9 @@
 # Menager MCP Server
 
+<!-- hela:version:start -->
+**MCP server:** `hela-ribosome` · **Version:** `3.0.0` · **Canonical tools:** 28. [Current tool reference](docs/TOOLS.md).
+<!-- hela:version:end -->
+
 
 > **Part of the [HeLa MCP Ecosystem](https://github.com/Hela-Ecosystem/hela-mcp-ecosystem)** — This server is **HeLa Ribosome (`hela-ribosome`)** — the *PTY Harness* component of the HeLa cellular architecture. See the [ecosystem docs](https://github.com/Hela-Ecosystem/hela-mcp-ecosystem) for profiles, workflows, and multi-client setup.
 
