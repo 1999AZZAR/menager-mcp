@@ -7,7 +7,7 @@
 
 > **Part of the [HeLa MCP Ecosystem](https://github.com/Hela-Ecosystem/hela-mcp-ecosystem)** — This server is **HeLa Ribosome (`hela-ribosome`)** — the *PTY Harness* component of the HeLa cellular architecture. See the [ecosystem docs](https://github.com/Hela-Ecosystem/hela-mcp-ecosystem) for profiles, workflows, and multi-client setup.
 
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
+[![GPL-3.0-or-later License](https://img.shields.io/badge/License-GPL--3.0--or--later-green.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg)](https://www.typescriptlang.org/)
 
 ![Menager Terminal Orchestration](assets/menager-illustrations/01-terminal-orchestration.jpg)
