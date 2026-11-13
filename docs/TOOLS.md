@@ -1,6 +1,6 @@
 # HeLa Ribosome: canonical tools
 
-Server version **3.0.0**. Generated from the ecosystem schema catalog; regenerate with `npm run docs:generate -- --servers` in the ecosystem checkout.
+Server version **3.0.1**. Generated from the ecosystem schema catalog; regenerate with `npm run docs:generate -- --servers` in the ecosystem checkout.
 
 Only names advertised by `tools/list` are listed here. Older aliases in migration examples are not additional tools. Runtime namespace prefixes are optional and do not change these server-local names.
 
@@ -50,7 +50,7 @@ Import opencode session data from a JSON file (opencode import <file>).
 
 ## `opencode_mcp_list`
 
-List configured MCP servers and connection status (opencode mcp list). OpenCode subprocesses use the login home rather than the cell's isolated HOME, so they connect to the existing managed service instead of trying to bind its port again.
+List configured MCP servers and connection status (opencode mcp list).
 
 ## `opencode_models`
 
@@ -66,7 +66,7 @@ Delete an opencode session (opencode session delete <sessionID>). Standalone; ag
 
 ## `opencode_stats`
 
-Token usage and cost statistics (opencode stats). `topTools` and `topModels` enable the corresponding sections; their values become a single `--limit` row count. `days=0` means today.
+Token usage and cost statistics (opencode stats).
 
 ## `opencode_status`
 
