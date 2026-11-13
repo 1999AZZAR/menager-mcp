@@ -2,6 +2,12 @@
 
 All notable changes to this project.
 
+## Unreleased
+
+### Fixed
+- `opencode_stats` now uses the CLI's boolean `--tools`/`--models` section flags and a single `--limit` row count, instead of passing the counts as flag values and printing help.
+- OpenCode subprocesses now use the login home and XDG paths instead of the cell's isolated runtime HOME. This lets `opencode_mcp_list` connect to the existing managed service rather than failing when it tries to bind port 49374 again.
+
 ## [3.0.0] - 2026-10-31
 
 ### Changed
