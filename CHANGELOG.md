@@ -2,7 +2,7 @@
 
 All notable changes to this project.
 
-## Unreleased
+## [3.0.1] - 2026-11-13
 
 ### Fixed
 - `opencode_stats` now uses the CLI's boolean `--tools`/`--models` section flags and a single `--limit` row count, instead of passing the counts as flag values and printing help.

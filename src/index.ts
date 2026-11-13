@@ -92,7 +92,7 @@ function runOpencodeSync(args: string[], cwd?: string, timeoutMs = 15000): { ok:
 const server = new Server(
   {
     name: "menager-mcp",
-    version: "3.0.0",
+    version: "3.0.1",
   },
   {
     capabilities: {
