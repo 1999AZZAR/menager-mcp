@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { spawnSync } from "node:child_process";
 import { SessionManager } from "./SessionManager.js";
+import { buildStatsArgs, opencodeHostEnv } from "./opencode-cli.js";
 
 const sessionManager = new SessionManager();
 
@@ -16,6 +17,11 @@ const OPENCODE_BIN = (() => {
   if (/^[a-zA-Z0-9._\/-]{1,256}$/.test(raw) && !raw.includes("..")) return raw;
   return "opencode";
 })();
+
+// Cells run with an isolated HOME, but OpenCode's managed service uses one
+// global port. Give every OpenCode subprocess the login environment so it
+// connects to the existing service instead of trying to bind port 49374.
+const OPENCODE_ENV = opencodeHostEnv();
 
 const AGENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 const MODEL_RE = /^[^/\s]+\/[^/\s]{1,128}$/;
@@ -76,7 +82,7 @@ function assertPort(v: unknown): number | undefined {
 
 function runOpencodeSync(args: string[], cwd?: string, timeoutMs = 15000): { ok: boolean; stdout: string; stderr: string; error?: string } {
   try {
-    const r = spawnSync(OPENCODE_BIN, args, { cwd: cwd || process.cwd(), timeout: timeoutMs, encoding: "utf-8", shell: false, maxBuffer: 2 * 1024 * 1024 });
+    const r = spawnSync(OPENCODE_BIN, args, { cwd: cwd || process.cwd(), timeout: timeoutMs, encoding: "utf-8", shell: false, maxBuffer: 2 * 1024 * 1024, env: OPENCODE_ENV });
     return { ok: r.status === 0, stdout: String(r.stdout || ""), stderr: String(r.stderr || ""), error: r.error ? String(r.error) : undefined };
   } catch (e: any) {
     return { ok: false, stdout: "", stderr: "", error: e?.message || String(e) };
@@ -368,10 +374,10 @@ const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        days: { type: "number", description: "Last N days" },
-        topTools: { type: "number", description: "Number of tools to show" },
-        topModels: { type: "number", description: "Show top N model breakdown" },
-        project: { type: "string", description: "Filter by project" }
+        days: { type: "number", description: "Last N days (0 means today)" },
+        topTools: { type: "number", description: "Show tool reliability and limit it to N rows" },
+        topModels: { type: "number", description: "Show model usage and limit it to N rows" },
+        project: { type: "string", description: "Filter by project ID, or use '.' for the current project" }
       },
       required: []
     }
@@ -554,7 +560,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const model = assertModel(rawModel);
         const fmt = format === "json" ? "json" : undefined;
         const runArgs = buildRunArgs({ message: prompt, model, agent, format: fmt, title: typeof title === "string" ? title : undefined, share: share === true, attach: typeof attach === "string" ? attach : undefined });
-        const info = sessionManager.spawn(OPENCODE_BIN, runArgs, cwd, {}, 5000, "xterm-256color", name, cols, rows, undefined, {
+        const info = sessionManager.spawn(OPENCODE_BIN, runArgs, cwd, OPENCODE_ENV, 5000, "xterm-256color", name, cols, rows, undefined, {
           kind: "agent", agent, model, dir: cwd,
           title: typeof title === "string" ? title.slice(0, 120) : undefined,
           promptPreview: prompt.slice(0, 200),
@@ -574,7 +580,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const opencodeId = session.meta.opencodeSessionId || session.resolveOpencodeSessionId();
         const runArgs = buildRunArgs({ message, session: opencodeId || undefined, model: session.meta.model, agent: session.meta.agent, format: undefined });
         if (!opencodeId) runArgs.splice(1, 0, "--continue");
-        const info = sessionManager.spawn(OPENCODE_BIN, runArgs, session.meta.dir || process.cwd(), {}, 5000, "xterm-256color", session.name, undefined, undefined, undefined, {
+        const info = sessionManager.spawn(OPENCODE_BIN, runArgs, session.meta.dir || process.cwd(), OPENCODE_ENV, 5000, "xterm-256color", session.name, undefined, undefined, undefined, {
           kind: "agent", agent: session.meta.agent, model: session.meta.model, dir: session.meta.dir,
           promptPreview: message.slice(0, 200), parentSessionId: sessionId, opencodeSessionId: opencodeId,
           run_id: session.meta.run_id ?? null, step_id: session.meta.step_id ?? null
@@ -588,7 +594,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const opencodeId = session.meta.opencodeSessionId || session.resolveOpencodeSessionId();
         if (!opencodeId) throw new Error("cannot fork: no opencode session id resolved yet (agent may still be starting; use agent_info to check, then retry)");
         const runArgs = buildRunArgs({ message, session: opencodeId, fork: true, model: session.meta.model, agent: session.meta.agent });
-        const info = sessionManager.spawn(OPENCODE_BIN, runArgs, session.meta.dir || process.cwd(), {}, 5000, "xterm-256color", typeof name === "string" ? name : undefined, undefined, undefined, undefined, {
+        const info = sessionManager.spawn(OPENCODE_BIN, runArgs, session.meta.dir || process.cwd(), OPENCODE_ENV, 5000, "xterm-256color", typeof name === "string" ? name : undefined, undefined, undefined, undefined, {
           kind: "agent", agent: session.meta.agent, model: session.meta.model, dir: session.meta.dir,
           promptPreview: message.slice(0, 200), parentSessionId: sessionId, opencodeSessionId: opencodeId,
           run_id: session.meta.run_id ?? null, step_id: session.meta.step_id ?? null
@@ -657,11 +663,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       case "opencode_stats": {
         const { days, topTools, topModels, project } = args as any;
-        const a = ["stats"];
-        if (days !== undefined) { const n = Number(days); if (!Number.isInteger(n) || n < 1 || n > 3650) throw new Error("days must be 1-3650"); a.push("--days", String(n)); }
-        if (topTools !== undefined) { const n = Number(topTools); if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error("topTools must be 1-100"); a.push("--tools", String(n)); }
-        if (topModels !== undefined) { const n = Number(topModels); if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error("topModels must be 1-100"); a.push("--models", String(n)); }
-        if (project !== undefined) a.push("--project", assertSafePath(project, "project"));
+        const a = buildStatsArgs({
+          days,
+          topTools,
+          topModels,
+          project: project !== undefined ? assertSafePath(project, "project") : undefined,
+        });
         const r = runOpencodeSync(a, undefined, 30000);
         return { content: [{ type: "text", text: (r.stdout || r.stderr || r.error || "").slice(0, 8000) }], isError: r.ok ? undefined : true };
       }
@@ -717,7 +724,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (typeof hostname !== "string" || !/^[a-zA-Z0-9.-]{1,253}$/.test(hostname)) throw new Error("invalid hostname");
           a.push("--hostname", hostname);
         }
-        const info = sessionManager.spawn(OPENCODE_BIN, a, process.cwd(), {}, 5000, "xterm-256color", typeof name === "string" ? name.slice(0, 64) : `opencode-${mode}`, undefined, undefined, undefined, { kind: "pty", promptPreview: `opencode ${a.join(" ")}`.slice(0, 200) });
+        const info = sessionManager.spawn(OPENCODE_BIN, a, process.cwd(), OPENCODE_ENV, 5000, "xterm-256color", typeof name === "string" ? name.slice(0, 64) : `opencode-${mode}`, undefined, undefined, undefined, { kind: "pty", promptPreview: `opencode ${a.join(" ")}`.slice(0, 200) });
         return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       }
       case "opencode_status": {

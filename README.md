@@ -148,7 +148,7 @@ Native `opencode` CLI integration (see [CLI docs](https://opencode.ai/docs/cli/)
 | `opencode_status` | `opencode --version` + `opencode agent list` | CLI health, defined agents, tracked counts. |
 | `agent_create` | `opencode agent create --path --description --mode --permissions --model` | Define new agents for later `agent_spawn`. |
 | `opencode_models` | `opencode models [provider] [--refresh] [--verbose]` | Model discovery for `agent_spawn --model`. |
-| `opencode_stats` | `opencode stats [--days --tools --models --project]` | Usage/cost observability. |
+| `opencode_stats` | `opencode stats [--days N] [--tools] [--models] [--project ID] [--limit N]` | Usage/cost observability. |
 | `opencode_export` / `opencode_import` | `opencode export [id]` / `import <file>` | Session portability. |
 | `opencode_session_delete` | `opencode session delete <id>` | Standalone native delete. |
 | `opencode_mcp_list` | `opencode mcp list` | MCP connection health. |
